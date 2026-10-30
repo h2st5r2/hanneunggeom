@@ -1,0 +1,322 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>한능검 시험지 생성기</title>
+<style>
+:root{--bg:#f4f5f7;--card:#fff;--ink:#1b1d21;--sub:#5d6470;--line:#d9dce1;--accent:#1f4fd8;--accent-ink:#fff}
+@media (prefers-color-scheme:dark){:root{--bg:#15171a;--card:#1f2226;--ink:#eceef1;--sub:#9aa2ae;--line:#33383f;--accent:#6c93ff;--accent-ink:#0b1020}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Pretendard","Noto Sans KR","Malgun Gothic",sans-serif;line-height:1.55}
+header.top{padding:20px 16px 4px;max-width:1100px;margin:0 auto}
+header.top h1{margin:0;font-size:1.5rem}
+header.top p{margin:4px 0 0;color:var(--sub);font-size:.9rem}
+main{max-width:1100px;margin:0 auto;padding:12px 16px 48px;display:grid;gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px}
+.card h2{margin:0 0 10px;font-size:1.05rem}
+.row{display:flex;flex-wrap:wrap;gap:12px 20px;align-items:center}
+label.chk{display:inline-flex;gap:6px;align-items:center;cursor:pointer}
+input[type=number],input[type=text]{padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);font:inherit}
+input[type=number]{width:80px}
+button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
+button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
+button:disabled{opacity:.5;cursor:default}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
+.tree{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px 12px}
+.chap{margin:6px 0 2px;font-weight:700}
+.topic{margin:2px 0 2px 14px}
+.subs{margin-left:34px;display:flex;flex-wrap:wrap;gap:0 16px}
+.cnt{color:var(--sub);font-size:.82rem}
+#msg{color:#c0392b;font-size:.9rem;min-height:1.2em}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.tabs button.on{background:var(--ink);color:var(--card)}
+#result{display:none}
+.hint{color:var(--sub);font-size:.85rem}
+
+/* 인쇄용 종이 */
+.paper{background:#fff;color:#000;width:210mm;max-width:100%;margin:12px auto 0;padding:14mm 12mm;border:1px solid var(--line);font-family:"Noto Serif KR","Batang","Malgun Gothic",serif;font-size:10pt;line-height:1.5}
+.paper h3{margin:0;text-align:center;font-size:17pt;letter-spacing:.04em}
+.paper .meta{display:flex;justify-content:space-between;border-top:2px solid #000;border-bottom:1px solid #000;margin:8px 0 10px;padding:3px 2px;font-size:9.5pt}
+.cols{column-count:2;column-gap:10mm;column-rule:1px solid #999}
+.q{break-inside:avoid;margin:0 0 5mm}
+.q .qh{font-weight:700}
+.q .qh .sc{font-weight:400;font-size:9pt}
+.src{border:1px solid #444;padding:4px 6px;margin:3px 0;font-size:9.5pt}
+.src p{margin:0 0 2px}
+.src .tag{font-weight:700;color:#333}
+.bogi{border:1px solid #444;padding:4px 6px;margin:3px 0;font-size:9.5pt}
+.bogi div{margin:0}
+.ch{margin:1px 0 0 0;padding-left:1.5em;text-indent:-1.5em}
+.paper table{width:100%;border-collapse:collapse;font-size:9pt;font-family:inherit}
+.paper th,.paper td{border:1px solid #666;padding:3px 5px;text-align:left;vertical-align:top}
+.paper th{background:#eee}
+.paper td.c,.paper th.c{text-align:center;white-space:nowrap}
+.paper .ans-note{font-size:9pt;margin-top:6px}
+.neg{text-decoration:underline}
+
+@page{size:A4;margin:10mm}
+@media print{
+  body{background:#fff}
+  header.top,#controls,#tabs,.noprint{display:none!important}
+  main{padding:0;max-width:none;display:block}
+  #result{display:block!important}
+  .paper{border:0;margin:0;padding:0;width:auto}
+  body.print-exam #answerPaper{display:none!important}
+  body.print-answer #examPaper{display:none!important}
+}
+@media (max-width:700px){.paper{padding:8mm 5mm}.cols{column-count:1;column-rule:0}}
+</style>
+</head>
+<body>
+<header class="top">
+  <h1>한능검 시험지 생성기</h1>
+  <p>한국사능력검정시험 심화 기출(47~79회)로 단원 쪽지시험과 실전 모의고사를 만듭니다.</p>
+</header>
+
+<main>
+  <section class="card" id="controls">
+    <h2>1. 범위 고르기</h2>
+    <div class="tools">
+      <button id="allOn">전체 선택</button>
+      <button id="allOff">전체 해제</button>
+      <button id="foldAll">모두 접기/펼치기</button>
+    </div>
+    <div class="tree" id="tree">데이터를 불러오는 중입니다…</div>
+    <p class="hint" id="poolInfo"></p>
+
+    <h2 style="margin-top:16px">2. 출제 옵션</h2>
+    <div class="row">
+      <label>문항 수 <input type="number" id="count" min="1" max="200" value="20"></label>
+      <label class="chk"><input type="checkbox" id="onlyOk"> 검수 완료(확인) 문항만</label>
+      <label class="chk"><input type="checkbox" id="excludePrev"> 직전에 출제한 문항 제외</label>
+      <label>시험지 제목 <input type="text" id="title" value="한국사능력검정시험 모의평가" size="28"></label>
+    </div>
+    <div class="row" style="margin-top:14px">
+      <button class="primary" id="make" disabled>선택한 범위로 출제</button>
+      <button class="primary" id="mock" disabled>실전 모의고사 (50문항)</button>
+    </div>
+    <p id="msg"></p>
+  </section>
+
+  <section id="result">
+    <div class="card noprint" id="tabs">
+      <div class="tabs">
+        <button id="tabExam" class="on">시험지</button>
+        <button id="tabAns">정답·해설지</button>
+        <span style="flex:1"></span>
+        <button id="printExam">시험지 인쇄</button>
+        <button id="printAns">정답지 인쇄</button>
+      </div>
+      <p class="hint">인쇄 창에서 대상을 “PDF로 저장”으로 고르면 PDF 파일이 됩니다. 원본 문제 이미지(사진·지도 등)는 포함되지 않고, 텍스트로 옮긴 자료만 나옵니다.</p>
+    </div>
+    <div class="paper" id="examPaper"></div>
+    <div class="paper" id="answerPaper" style="display:none"></div>
+  </section>
+</main>
+
+<script>
+(function(){
+'use strict';
+var CIRCLED=['①','②','③','④','⑤'];
+var LS_KEY='hanneunggeom.lastExam';
+var Q=[], TAX=null, ORDER={}, current=null;
+var $=function(id){return document.getElementById(id)};
+
+function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
+
+/* ---------- 데이터 불러오기 ---------- */
+Promise.all([fetch('taxonomy.json'),fetch('questions.json')]).then(function(rs){
+  if(!rs[0].ok||!rs[1].ok) throw new Error('http');
+  return Promise.all([rs[0].json(),rs[1].json()]);
+}).then(function(d){
+  TAX=d[0]; Q=d[1]; init();
+}).catch(function(){
+  $('tree').innerHTML='<b>데이터를 불러오지 못했습니다.</b><br>index.html을 파일로 직접 열면 브라우저가 JSON 읽기를 막습니다. GitHub Pages나 로컬 서버(<code>python3 -m http.server</code>)로 열어 주세요.';
+});
+
+function init(){
+  var i=0;
+  TAX.topics.forEach(function(t){ t.subs.forEach(function(s){ ORDER[s.code]=i++; }); });
+  Q.forEach(function(q){ if(!(q.code in ORDER)) ORDER[q.code]=9999; });
+  buildTree();
+  $('make').disabled=false; $('mock').disabled=false;
+  updatePool();
+}
+
+/* ---------- 범위 트리 ---------- */
+function countBy(key){var m={};Q.forEach(function(q){m[q[key]]=(m[q[key]]||0)+1});return m}
+
+function buildTree(){
+  var byTopic=countBy('topic'), byCode=countBy('code');
+  var html='', lastChap=null;
+  TAX.topics.forEach(function(t){
+    if(t.chapter!==lastChap){
+      html+='<div class="chap">'+esc(t.chapter)+'</div>'; lastChap=t.chapter;
+    }
+    html+='<div class="topic"><label class="chk"><input type="checkbox" class="tp" data-topic="'+esc(t.key)+'" checked> '+
+      esc(t.name)+' <span class="cnt">('+(byTopic[t.key]||0)+')</span></label>';
+    if(t.subs.length>1){
+      html+='<div class="subs">'+t.subs.map(function(s){
+        return '<label class="chk"><input type="checkbox" class="sb" data-topic="'+esc(t.key)+'" data-code="'+esc(s.code)+'" checked> '+
+          esc(s.name)+' <span class="cnt">('+(byCode[s.code]||0)+')</span></label>';
+      }).join('')+'</div>';
+    } else {
+      html+='<input type="checkbox" class="sb" data-topic="'+esc(t.key)+'" data-code="'+esc(t.subs[0].code)+'" checked hidden>';
+    }
+    html+='</div>';
+  });
+  $('tree').innerHTML=html;
+  $('tree').addEventListener('change',function(e){
+    var el=e.target;
+    if(el.classList.contains('tp')){
+      document.querySelectorAll('.sb[data-topic="'+el.dataset.topic+'"]').forEach(function(b){b.checked=el.checked});
+    }
+    syncTopics(); updatePool();
+  });
+  syncTopics();
+}
+
+function syncTopics(){
+  document.querySelectorAll('.tp').forEach(function(tp){
+    var subs=document.querySelectorAll('.sb[data-topic="'+tp.dataset.topic+'"]');
+    var on=0; subs.forEach(function(b){if(b.checked)on++});
+    tp.checked=on===subs.length; tp.indeterminate=on>0&&on<subs.length;
+  });
+}
+
+function selectedCodes(){
+  var s={}; document.querySelectorAll('.sb').forEach(function(b){if(b.checked)s[b.dataset.code]=1}); return s;
+}
+
+function basePool(){
+  var only=$('onlyOk').checked, ex=$('excludePrev').checked?prevIds():{};
+  return Q.filter(function(q){ return (!only||q.status==='확인') && !ex[q.id]; });
+}
+
+function updatePool(){
+  var codes=selectedCodes();
+  var n=basePool().filter(function(q){return codes[q.code]}).length;
+  $('poolInfo').textContent='현재 조건에서 출제 가능한 문항: '+n+'개';
+}
+['onlyOk','excludePrev'].forEach(function(id){$(id).addEventListener('change',updatePool)});
+
+$('allOn').onclick=function(){document.querySelectorAll('.sb,.tp').forEach(function(b){b.checked=true});syncTopics();updatePool()};
+$('allOff').onclick=function(){document.querySelectorAll('.sb,.tp').forEach(function(b){b.checked=false});syncTopics();updatePool()};
+var folded=false;
+$('foldAll').onclick=function(){folded=!folded;document.querySelectorAll('.subs').forEach(function(d){d.style.display=folded?'none':'flex'})};
+
+/* ---------- 이전 출제 기록 ---------- */
+function prevIds(){
+  try{var a=JSON.parse(localStorage.getItem(LS_KEY)||'[]');var m={};a.forEach(function(i){m[i]=1});return m}catch(e){return {}}
+}
+function savePrev(ids){ try{localStorage.setItem(LS_KEY,JSON.stringify(ids))}catch(e){} }
+
+/* ---------- 출제 ---------- */
+function shuffle(a){a=a.slice();for(var i=a.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=a[i];a[i]=a[j];a[j]=t}return a}
+
+function sortExam(list){
+  return list.slice().sort(function(a,b){
+    return (ORDER[a.code]-ORDER[b.code])||(a.r-b.r)||(a.n-b.n);
+  });
+}
+
+function setMsg(s){$('msg').textContent=s||''}
+
+$('make').onclick=function(){
+  var codes=selectedCodes(), want=Math.max(1,parseInt($('count').value,10)||0);
+  var pool=basePool().filter(function(q){return codes[q.code]});
+  if(!pool.length){setMsg('선택한 범위에서 뽑을 수 있는 문항이 없습니다. 범위나 옵션을 바꿔 주세요.');return}
+  var pick=shuffle(pool).slice(0,want);
+  var note=pick.length<want?('조건에 맞는 문항이 '+pick.length+'개뿐이라 '+want+'개 중 '+pick.length+'개만 출제했습니다.'):'';
+  setMsg(note);
+  show(sortExam(pick),$('title').value||'한국사능력검정시험 모의평가');
+};
+
+/* 실전 모의고사: 장(chapter)별 비율을 기출 전체의 장별 비중으로 맞춘다 */
+$('mock').onclick=function(){
+  var TOTAL=50, pool=basePool();
+  var chapOf={}; TAX.topics.forEach(function(t){chapOf[t.key]=t.chapter});
+  var chapQ={}, chapAll={}, allN=0;
+  Q.forEach(function(q){var c=chapOf[q.topic]||'기타';chapAll[c]=(chapAll[c]||0)+1;allN++});
+  pool.forEach(function(q){var c=chapOf[q.topic]||'기타';(chapQ[c]=chapQ[c]||[]).push(q)});
+  var chaps=Object.keys(chapAll), quota={}, used=0;
+  var rems=chaps.map(function(c){var x=chapAll[c]*TOTAL/allN;quota[c]=Math.floor(x);used+=quota[c];return {c:c,r:x-Math.floor(x)}});
+  rems.sort(function(a,b){return b.r-a.r});
+  for(var i=0;used<TOTAL;i++,used++) quota[rems[i%rems.length].c]++;
+  var pick=[], left=[];
+  chaps.forEach(function(c){
+    var p=shuffle(chapQ[c]||[]), k=quota[c];
+    pick=pick.concat(p.slice(0,k)); left=left.concat(p.slice(k));
+  });
+  if(pick.length<TOTAL) pick=pick.concat(shuffle(left).slice(0,TOTAL-pick.length));
+  setMsg(pick.length<TOTAL?('조건에 맞는 문항이 부족해 '+pick.length+'문항만 출제했습니다.'):'');
+  if(!pick.length){setMsg('출제할 문항이 없습니다. 옵션을 바꿔 주세요.');return}
+  show(sortExam(pick),'한국사능력검정시험 실전 모의고사 (심화)');
+};
+
+/* ---------- 화면 ---------- */
+function srcHtml(src){
+  if(!src) return '';
+  var parts=String(src).split(/(?=\[[^\]\s][^\]]{0,12}\])/).filter(function(s){return s.trim()});
+  return '<div class="src">'+parts.map(function(p){
+    var m=p.match(/^\[([^\]]+)\]\s*([\s\S]*)$/);
+    return m?'<p><span class="tag">['+esc(m[1])+']</span> '+esc(m[2])+'</p>':'<p>'+esc(p)+'</p>';
+  }).join('')+'</div>';
+}
+
+function qHtml(q,i){
+  var h='<div class="q"><div class="qh">'+(i+1)+'. '+esc(q.q).replace(/(옳지 않은 것|틀린 것|적절하지 않은 것)/,'<span class="neg">$1</span>')+
+    ' <span class="sc">['+q.score+'점]</span></div>';
+  h+=srcHtml(q.src);
+  if(q.bogi&&q.bogi.length){
+    h+='<div class="bogi"><div>&lt;보기&gt;</div>'+q.bogi.map(function(b){return '<div>'+esc(b.l)+'. '+esc(b.t)+'</div>'}).join('')+'</div>';
+  }
+  h+=q.ch.map(function(c,k){return '<div class="ch">'+CIRCLED[k]+' '+esc(c.t)+'</div>'}).join('');
+  return h+'</div>';
+}
+
+function show(list,title){
+  current={list:list,title:title};
+  savePrev(list.map(function(q){return q.id}));
+  var total=list.reduce(function(s,q){return s+(q.score||0)},0);
+  $('examPaper').innerHTML='<h3>'+esc(title)+'</h3><div class="meta"><span>문항 수 '+list.length+'문항 · 배점 합계 '+total+'점</span><span>성명 ____________ &nbsp; 점수 ______ / '+total+'</span></div><div class="cols">'+list.map(qHtml).join('')+'</div>';
+
+  var rows=list.map(function(q,i){
+    var sub=q.subj||'';
+    var topic=(TAX.topics.filter(function(t){return t.key===q.topic})[0]||{}).name||'';
+    return '<tr><td class="c">'+(i+1)+'</td><td class="c"><b>'+CIRCLED[q.ans-1]+'</b></td><td class="c">'+esc(q.id)+'</td><td>'+esc(topic)+(sub?' &gt; '+esc(sub):'')+'</td><td>'+esc(q.ansText||'')+'</td><td>'+esc(q.kw||'')+'</td><td class="c">'+q.score+'</td></tr>';
+  }).join('');
+  $('answerPaper').innerHTML='<h3>'+esc(title)+' — 정답·해설</h3><div class="meta"><span>문항 수 '+list.length+'문항</span><span>출처는 회차-번호입니다.</span></div>'+
+    '<table><thead><tr><th class="c">번호</th><th class="c">정답</th><th class="c">출처</th><th>대주제 &gt; 소주제</th><th>정답 선지</th><th>자료 키워드</th><th class="c">배점</th></tr></thead><tbody>'+rows+'</tbody></table>';
+
+  $('result').style.display='block';
+  tab('exam');
+  $('result').scrollIntoView({behavior:'smooth'});
+  updatePool();
+}
+
+function tab(w){
+  $('examPaper').style.display=w==='exam'?'':'none';
+  $('answerPaper').style.display=w==='ans'?'':'none';
+  $('tabExam').classList.toggle('on',w==='exam');
+  $('tabAns').classList.toggle('on',w==='ans');
+}
+$('tabExam').onclick=function(){tab('exam')};
+$('tabAns').onclick=function(){tab('ans')};
+
+function doPrint(kind){
+  if(!current) return;
+  // 인쇄할 쪽만 보이게 한 뒤 인쇄한다
+  document.body.className='print-'+kind;
+  $('examPaper').style.display=''; $('answerPaper').style.display='';
+  window.print();
+  document.body.className='';
+  tab(kind==='exam'?'exam':'ans');
+}
+$('printExam').onclick=function(){doPrint('exam')};
+$('printAns').onclick=function(){doPrint('answer')};
+})();
+</script>
+</body>
+</html>
