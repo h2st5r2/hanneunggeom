@@ -704,6 +704,89 @@ def t_E6(qs):
     return df.reset_index(drop=True)
 
 
+# ---------------------------------------------------------------- 출제 단서(시각화용)
+ALL_TYPES = [t for t, _ in sorted(Counter(x["type"] for x in Q).items(), key=lambda kv: (-kv[1], kv[0]))]
+
+
+def t_Q1(qs):
+    c = Counter((x["code"], x["r"]) for x in qs)
+    rows = []
+    for code, name in SUB_NAME.items():
+        row = dict(시대=_sub_chapter(code), 소주제=code, 소주제명=name)
+        for r in ROUNDS:
+            row[str(r)] = c.get((code, r), 0)
+        row["합계"] = sum(row[str(r)] for r in ROUNDS)
+        rows.append(row)
+    df = pd.DataFrame(rows)
+    df["_c"] = df["시대"].map(CH_RANK)
+    return df.sort_values(["_c", "소주제"]).drop(columns="_c").reset_index(drop=True)
+
+
+def t_Q2(qs):
+    c = Counter((x["r"], chapter_of(x)) for x in qs)
+    rows = []
+    for r in ROUNDS:
+        row = {"회차": r}
+        for ch in CHAPTERS:
+            row[ch] = c.get((r, ch), 0)
+        row["합계"] = sum(row[ch] for ch in CHAPTERS)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def t_Q3(qs):
+    c = Counter((x["r"], x["type"]) for x in qs)
+    rows = []
+    for r in ROUNDS:
+        row = {"회차": r}
+        for t in ALL_TYPES:
+            row[t] = c.get((r, t), 0)
+        row["합계"] = sum(row[t] for t in ALL_TYPES)
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def t_Q4(qs):
+    d = _kw_rounds(qs, NEXT)
+    rows = []
+    for k, rs in d.items():
+        if len(rs) < 4:
+            continue
+        n, last, med, el, due = _kw_stats(rs, NEXT)
+        srt = sorted(rs)
+        rows.append(dict(키워드=k, 출제회차수=n, 최근출제회차=last, 간격중앙값=med, 경과회차=el, 도래비=due,
+                         마지막간격=srt[-1] - srt[-2], 회차=", ".join(map(str, srt))))
+    df = pd.DataFrame(rows)
+    return df.sort_values(["출제회차수", "도래비", "키워드"], ascending=[False, False, True]).reset_index(drop=True)
+
+
+def _bucket(g):
+    return str(g) if g <= 10 else "11+"
+
+
+def t_Q5(qs):
+    ent = {"소주제": defaultdict(set), "키워드": defaultdict(set), "선지문장": defaultdict(set)}
+    for x in qs:
+        ent["소주제"][x["code"]].add(x["r"])
+        for k in split_kw(x["kw"]):
+            ent["키워드"][k].add(x["r"])
+        for c in x["ch"]:
+            if c["role"] != "배열" and c["t"]:
+                ent["선지문장"][_norm(c["t"])].add(x["r"])
+    labels = [str(i) for i in range(1, 11)] + ["11+"]
+    rows = []
+    for kind, d in ent.items():
+        cnt = Counter()
+        for rs in d.values():
+            srt = sorted(rs)
+            for a, b in zip(srt, srt[1:]):
+                cnt[_bucket(b - a)] += 1
+        tot = sum(cnt.values())
+        for lb in labels:
+            rows.append(dict(대상=kind, 간격=lb, 건수=cnt.get(lb, 0), 비중=100 * cnt.get(lb, 0) / tot if tot else None))
+    return pd.DataFrame(rows)
+
+
 # (id, 파일명, 제목, 함수)
 TABLES = [
     ("L1a", "학습1_대주제별_출제비중", t_L1a), ("L1b", "학습1_시대별_출제비중", t_L1b),
@@ -727,6 +810,9 @@ TABLES = [
     ("E1", "시대1_소주제_비중과주기", t_E1), ("E2", "시대2_소주제카드_키워드", t_E2),
     ("E3", "시대3_소주제카드_함정짝", t_E3), ("E4", "시대4_세분류_비중", t_E4),
     ("E5", "시대5_시대요약", t_E5), ("E6", "시대6_소주제_구간변화", t_E6),
+    ("Q1", "단서1_소주제_회차이력", t_Q1), ("Q2", "단서2_회차별_시대배분", t_Q2),
+    ("Q3", "단서3_회차별_유형배분", t_Q3), ("Q4", "단서4_키워드_출제이력", t_Q4),
+    ("Q5", "단서5_재출제간격분포", t_Q5),
 ]
 
 

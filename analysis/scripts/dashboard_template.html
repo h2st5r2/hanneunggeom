@@ -9,7 +9,7 @@
   color-scheme:light;
   --surface:#fcfcfb; --card:#ffffff; --line:#e4e3de; --grid:#ecebe6;
   --text:#0b0b0b; --text2:#52514e; --muted:#7a7972;
-  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6; --s8:#e34948;
   --warn-bg:#fff4e0; --warn-line:#eda100;
 }
 @media (prefers-color-scheme: dark){
@@ -17,7 +17,7 @@
     color-scheme:dark;
     --surface:#1a1a19; --card:#232321; --line:#3a3a37; --grid:#2f2f2c;
     --text:#f0efec; --text2:#c3c2b7; --muted:#9a998f;
-    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9; --s8:#e66767;
     --warn-bg:#33290f; --warn-line:#c98500;
   }
 }
@@ -67,6 +67,7 @@ select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6
       <button data-tab="learner" aria-pressed="true">학습자용</button>
       <button data-tab="prof" aria-pressed="false">교수자용</button>
       <button data-tab="era" aria-pressed="false">시대별</button>
+      <button data-tab="clue" aria-pressed="false">출제 단서</button>
     </div>
     <div class="seg" role="group" aria-label="집계 기준" id="subs">
       <button data-sub="전체" aria-pressed="true">전체</button>
@@ -81,7 +82,7 @@ select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6
 "use strict";
 const D = JSON.parse(document.getElementById("DATA").textContent);
 const M = D._meta;
-const state = { tab: "learner", sub: "전체", l3: null, ch: null, es: null };
+const state = { tab: "learner", sub: "전체", l3: null, ch: null, es: null, cl: "전체", cs: "코드순" };
 const T = id => D[id][state.sub];
 const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const f1 = v => v == null ? "-" : Number(v).toFixed(1);
@@ -400,14 +401,124 @@ function bindEra() {
   const b = document.getElementById("essel"); if (b) b.onchange = () => { state.es = b.value; render(); };
 }
 
+/* ---------- 출제 단서 ---------- */
+function cellColor(v) { return v <= 0 ? "var(--grid)" : `color-mix(in srgb, var(--s1) ${Math.min(100, 40 + 30 * (v - 1))}%, var(--card))`; }
+function grid(rows, cols, o) {
+  const cw = o.cw || 14, rh = o.rh || 13, lw = o.lw || 190, rw = o.rw || 0, W = lw + cols.length * cw + rw, H = 24 + rows.length * rh + 4;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">`;
+  cols.forEach((c, j) => { if (j % (o.every || 4) === 0) s += `<text x="${lw + j * cw + cw / 2}" y="12" text-anchor="middle" style="font-size:10px">${esc(c)}</text>`; });
+  if (o.mark != null) s += `<line x1="${lw + o.mark * cw}" x2="${lw + o.mark * cw}" y1="16" y2="${H}" stroke="var(--text2)" stroke-width="1" stroke-dasharray="3 3"/>`;
+  rows.forEach((r, i) => {
+    const y = 24 + i * rh;
+    s += `<text x="${lw - 6}" y="${y + rh - 3}" text-anchor="end" style="font-size:11px">${esc(trunc(r.label, o.lc || 26))}</text>`;
+    r.vals.forEach((v, j) => {
+      s += `<rect x="${lw + j * cw + 1}" y="${y + 1}" width="${cw - 2}" height="${rh - 2}" rx="2" fill="${cellColor(v)}" data-tip="${esc(`${r.label}\n${cols[j]}${o.unit || "회"}: ${v}문항`)}"/>`;
+    });
+    if (r.right != null) s += `<text x="${lw + cols.length * cw + 6}" y="${y + rh - 3}" style="font-size:11px">${esc(r.right)}</text>`;
+  });
+  return s + "</svg>";
+}
+function scatter(pts, o) {
+  const W = 700, H = 340, pl = 44, pb = 40, pt = 10, pr = 14, pw = W - pl - pr, ph = H - pb - pt;
+  const mx = Math.max(4, Math.ceil(Math.max(...pts.map(p => Math.max(p.x, p.y))) + 1));
+  const X = v => pl + v / mx * pw, Y = v => pt + ph - v / mx * ph;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">`;
+  for (let t = 0; t <= mx; t += mx > 16 ? 4 : 2) {
+    s += `<line class="ax" x1="${pl}" x2="${W - pr}" y1="${Y(t)}" y2="${Y(t)}"/><text x="${pl - 6}" y="${Y(t) + 4}" text-anchor="end">${t}</text><text x="${X(t)}" y="${H - pb + 16}" text-anchor="middle">${t}</text>`;
+  }
+  s += `<line x1="${X(0)}" y1="${Y(0)}" x2="${X(mx)}" y2="${Y(mx)}" stroke="var(--text2)" stroke-dasharray="4 4"/>`;
+  s += `<text x="${pl + pw / 2}" y="${H - 4}" text-anchor="middle">${esc(o.xl)}</text><text transform="translate(12 ${pt + ph / 2}) rotate(-90)" text-anchor="middle">${esc(o.yl)}</text>`;
+  pts.forEach((p, i) => {
+    const jx = ((i * 7) % 5 - 2) * 0.07, jy = ((i * 3) % 5 - 2) * 0.07;
+    s += `<circle cx="${X(p.x + jx)}" cy="${Y(p.y + jy)}" r="4.5" fill="${p.y >= p.x ? "var(--s2)" : "var(--s1)"}" stroke="var(--card)" stroke-width="1.5" data-tip="${esc(p.tip)}"/>`;
+  });
+  return s + "</svg>";
+}
+function stackCols(labels, series, o) {
+  const W = 700, H = 250, pl = 30, pb = 26, pt = 8, pw = W - pl - 8, ph = H - pb - pt, n = labels.length, cw = pw / n, bw = cw * 0.72;
+  const tot = labels.map((_, i) => sum(series.map(s => s.vals[i]))), max = Math.max(1, ...tot);
+  let s = legend(series.map(se => ({ n: se.name, c: se.color }))) + `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">`;
+  [0, 0.5, 1].forEach(t => { const y = pt + ph * (1 - t); s += `<line class="ax" x1="${pl}" x2="${W - 8}" y1="${y}" y2="${y}"/><text x="${pl - 5}" y="${y + 4}" text-anchor="end">${Math.round(max * t)}</text>`; });
+  labels.forEach((l, i) => {
+    let base = pt + ph;
+    series.forEach(se => {
+      const v = se.vals[i], h = v / max * ph;
+      if (v > 0) s += `<rect x="${pl + i * cw + (cw - bw) / 2}" y="${base - h + 1}" width="${bw}" height="${Math.max(h - 2, 0.5)}" fill="${se.color}"/>`;
+      base -= h;
+    });
+    if (i % 4 === 0 || i === n - 1) s += `<text x="${pl + i * cw + cw / 2}" y="${H - 8}" text-anchor="middle">${l}</text>`;
+    s += `<rect x="${pl + i * cw}" y="${pt}" width="${cw}" height="${ph}" fill="transparent" data-tip="${esc(`${l}회\n` + series.map(se => `${se.name} ${se.vals[i]}`).join("\n"))}"/>`;
+  });
+  return s + "</svg>";
+}
+function groupedCols(cats, series, o) {
+  const W = 700, H = 240, pl = 36, pb = 28, pt = 8, pw = W - pl - 8, ph = H - pb - pt, n = cats.length, cw = pw / n, bw = cw * 0.26;
+  const max = Math.max(1, ...series.flatMap(s => s.vals));
+  let s = legend(series.map(se => ({ n: se.name, c: se.color }))) + `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">`;
+  [0, 0.5, 1].forEach(t => { const y = pt + ph * (1 - t); s += `<line class="ax" x1="${pl}" x2="${W - 8}" y1="${y}" y2="${y}"/><text x="${pl - 5}" y="${y + 4}" text-anchor="end">${(max * t).toFixed(0)}%</text>`; });
+  cats.forEach((c, i) => {
+    series.forEach((se, k) => { const h = se.vals[i] / max * ph; s += `<rect x="${pl + i * cw + cw * 0.1 + k * (bw + 1)}" y="${pt + ph - h}" width="${bw}" height="${h}" rx="2" fill="${se.color}"/>`; });
+    s += `<text x="${pl + i * cw + cw / 2}" y="${H - 9}" text-anchor="middle">${c}</text>`;
+    s += `<rect x="${pl + i * cw}" y="${pt}" width="${cw}" height="${ph}" fill="transparent" data-tip="${esc(`간격 ${c}회\n` + series.map(se => `${se.name} ${se.vals[i].toFixed(1)}%`).join("\n"))}"/>`;
+  });
+  return s + "</svg>";
+}
+function clue() {
+  const out = [], R = M.rounds, NEXT = M.next;
+  const q1 = T("Q1"), e1 = T("E1");
+  const last = {}; e1.forEach(r => last[r.소주제] = r.최근출제회차);
+  let rows = q1.filter(r => state.cl === "전체" || r.시대 === state.cl);
+  if (state.cs === "오래 안 나온 순") rows = [...rows].sort((a, b) => (last[a.소주제] ?? -1) - (last[b.소주제] ?? -1) || (a.소주제 < b.소주제 ? -1 : 1));
+  if (state.cs === "출제 많은 순") rows = [...rows].sort((a, b) => b.합계 - a.합계 || (a.소주제 < b.소주제 ? -1 : 1));
+  const opts = (arr, cur) => arr.map(c => `<option ${c === cur ? "selected" : ""}>${esc(c)}</option>`).join("");
+  out.push(card("1. 소주제 × 회차 출제 이력", "칸 하나가 한 회차의 한 소주제이고 진할수록 그 회차에 많이 나왔다. 점선은 69회와 70회 사이(최근 10회의 시작)이다. 오른쪽 숫자는 80회를 기준으로 마지막 출제 후 지난 회차이다.",
+    `<div class="bar" style="margin-bottom:8px"><label>시대 <select id="clsel">${opts(["전체", ...M.chapters], state.cl)}</select></label> <label>정렬 <select id="cssel">${opts(["코드순", "오래 안 나온 순", "출제 많은 순"], state.cs)}</select></label></div>` +
+    `<div class="scroll" style="max-height:560px;padding:6px">` +
+    grid(rows.map(r => ({ label: `${r.소주제} ${r.소주제명}`, vals: R.map(x => r[String(x)]), right: last[r.소주제] == null ? "미출제" : `${NEXT - last[r.소주제]}회 경과` })),
+      R, { aria: "소주제별 회차 출제 이력", cw: 14, rw: 70, mark: R.indexOf(70), every: 4 }) + "</div>"));
+
+  const pts = e1.filter(r => r.출제회차수 >= 4 && r.간격중앙값 != null).map(r => ({ x: r.간격중앙값, y: NEXT - r.최근출제회차, tip: `${r.소주제} ${r.소주제명}\n출제 ${r.출제회차수}개 회차 · 간격 중앙값 ${r.간격중앙값}\n마지막 출제 ${r.최근출제회차}회 → 경과 ${NEXT - r.최근출제회차}회` }));
+  out.push(card("2. 주기와 경과", "출제 회차 4개 이상인 소주제. 가로는 출제 간격 중앙값, 세로는 마지막 출제 이후 지난 회차(80회 기준)이다. 점선 위(주황)는 경과가 평소 간격 이상인 소주제이다. 겹치는 점은 약간 흩어 그렸다.",
+    legend([{ n: "경과 ≥ 간격 중앙값", c: "var(--s2)" }, { n: "경과 < 간격 중앙값", c: "var(--s1)" }]) +
+    scatter(pts, { aria: "소주제 주기와 경과", xl: "간격 중앙값(회차)", yl: "마지막 출제 후 경과(회차)" }) +
+    `<p class="d" style="margin-top:6px">점 ${pts.length}개 중 주황 ${pts.filter(p => p.y >= p.x).length}개.</p>`));
+
+  const q2 = T("Q2"), chs = M.chapters;
+  const sers = [...chs.slice(0, 7).map((c, i) => ({ name: SH(c), color: SER[i], vals: q2.map(r => r[c]) })),
+    { name: "복합·부록", color: "var(--s8)", vals: q2.map(r => r[chs[7]] + r[chs[8]]) }];
+  out.push(card("3. 회차별 시대 배분", "한 회차 안에서 시대별 문항 수(쌓은 막대). 회차마다 배분이 얼마나 흔들리는지 본다.",
+    stackCols(R, sers, { aria: "회차별 시대 배분" })));
+
+  const q3 = T("Q3"), types = Object.keys(q3[0]).filter(k => k !== "회차" && k !== "합계");
+  out.push(card("4. 회차별 발문 유형", "유형별 문항 수. 칸이 진할수록 그 회차에 그 유형이 많았다.",
+    grid(types.map(t => ({ label: t, vals: q3.map(r => r[t]) })), R, { aria: "회차별 유형 배분", cw: 18, rh: 18, lw: 90, mark: R.indexOf(70), every: 4, lc: 10 })));
+
+  const q4 = T("Q4").slice(0, 60);
+  out.push(card("5. 자주 나온 키워드의 출제 이력", "출제 회차 4개 이상인 자료 키워드 중 상위 60개(출제 회차 수 순). 오른쪽은 간격 중앙값과 80회 기준 경과 회차이다.",
+    `<div class="scroll" style="max-height:520px;padding:6px">` +
+    grid(q4.map(r => ({ label: r.키워드, vals: R.map(x => r.회차.split(", ").includes(String(x)) ? 1 : 0), right: `간격 ${r.간격중앙값} · 경과 ${r.경과회차}` })),
+      R, { aria: "키워드 출제 이력", cw: 14, rw: 110, mark: R.indexOf(70), every: 4, lc: 18 }) + "</div>"));
+
+  const q5 = T("Q5"), cats = q5.filter(r => r.대상 === "소주제").map(r => r.간격);
+  const sr = (k, c) => ({ name: k, color: c, vals: cats.map(g => (q5.find(r => r.대상 === k && r.간격 === g) || {}).비중 || 0) });
+  out.push(card("6. 다시 나오기까지의 간격", "같은 소주제·키워드·선지 문장이 이어서 출제될 때 회차 사이 간격의 분포(%). 소주제는 짧은 간격에 몰리고, 키워드와 선지 문장은 간격이 넓게 퍼진다.",
+    groupedCols(cats, [sr("소주제", "var(--s1)"), sr("키워드", "var(--s2)"), sr("선지문장", "var(--s3)")], { aria: "재출제 간격 분포" })));
+  return out.join("");
+}
+function bindClue() {
+  const a = document.getElementById("clsel"); if (a) a.onchange = () => { state.cl = a.value; render(); };
+  const b = document.getElementById("cssel"); if (b) b.onchange = () => { state.cs = b.value; render(); };
+}
+
 /* ---------- 렌더 ---------- */
 function render() {
   const nConf = M.nConf;
   const warn = state.sub === "확인"
     ? `<div class="note"><b>확인 문항만 보는 중:</b> 확인 ${nConf}문항은 선사~조선 시대에 ${M.confEarlyPct}%가 몰려 있어 근대·일제·현대 항목이 거의 비어 있다. 시험 전체의 경향은 "전체"로 본다.</div>` : "";
-  document.getElementById("app").innerHTML = warn + (state.tab === "learner" ? learner() : state.tab === "prof" ? prof() : era());
+  document.getElementById("app").innerHTML = warn + (state.tab === "learner" ? learner() : state.tab === "prof" ? prof() : state.tab === "era" ? era() : clue());
   if (state.tab === "learner") bindL3();
   if (state.tab === "era") bindEra();
+  if (state.tab === "clue") bindClue();
 }
 document.getElementById("tabs").onclick = e => { const b = e.target.closest("button"); if (!b) return; state.tab = b.dataset.tab; syncBtns(); render(); };
 document.getElementById("subs").onclick = e => { const b = e.target.closest("button"); if (!b) return; state.sub = b.dataset.sub; syncBtns(); render(); };

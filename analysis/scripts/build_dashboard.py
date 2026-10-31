@@ -22,6 +22,7 @@ EMBED = {
     "P3a": None, "P3d": 30, "P4a": None, "P4b": None, "P4c": None, "P4d": None,
     "P5a": None, "P5b": None, "P5c": None, "P6": 40, "P6b": None,
     "E1": None, "E2": None, "E3": None, "E4": None, "E5": None, "E6": None,
+    "Q1": None, "Q2": None, "Q3": None, "Q4": None, "Q5": None,
 }
 
 

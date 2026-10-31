@@ -399,6 +399,51 @@ for sub, d in SUB.items():
     e6["시대"] = e6.소주제.map(sub_ch)
     compare("시대6_소주제_구간변화", sub, e6, ["소주제"])
 
+    # ---- 출제 단서(Q1~Q5)
+    xt = pd.crosstab(d.code, d.r).reindex(index=list(subname), columns=ROUNDS, fill_value=0)
+    e = xt.copy()
+    e.columns = [str(c) for c in e.columns]
+    e = e.reset_index().rename(columns={"code": "소주제"})
+    e["합계"] = xt.sum(axis=1).values
+    compare("단서1_소주제_회차이력", sub, e, ["소주제"])
+    e = pd.crosstab(d.r, d.chapter).reindex(index=ROUNDS, columns=chapters, fill_value=0)
+    e["합계"] = e.sum(axis=1)
+    e = e.reset_index().rename(columns={"r": "회차"})
+    compare("단서2_회차별_시대배분", sub, e, ["회차"])
+    all_types = [t for t, _ in sorted(df.type.value_counts().items(), key=lambda kv: (-kv[1], kv[0]))]
+    e = pd.crosstab(d.r, d.type).reindex(index=ROUNDS, columns=all_types, fill_value=0)
+    e["합계"] = e.sum(axis=1)
+    e = e.reset_index().rename(columns={"r": "회차"})
+    compare("단서3_회차별_유형배분", sub, e, ["회차"])
+    kwr_ = {}
+    for _, r in d.iterrows():
+        for t in toks(r.kw):
+            kwr_.setdefault(t, set()).add(int(r.r))
+    rows = []
+    for t, rs in kwr_.items():
+        rr = sorted(rs)
+        if len(rr) >= 4:
+            med = float(np.median(np.diff(rr)))
+            rows.append(dict(키워드=t, 출제회차수=len(rr), 최근출제회차=rr[-1], 간격중앙값=med, 경과회차=80 - rr[-1],
+                             도래비=(80 - rr[-1]) / med, 마지막간격=rr[-1] - rr[-2], 회차=", ".join(map(str, rr))))
+    compare("단서4_키워드_출제이력", sub, pd.DataFrame(rows), ["키워드"])
+    ent = {"소주제": {}, "키워드": {}, "선지문장": {}}
+    for _, r in d.iterrows():
+        ent["소주제"].setdefault(r.code, set()).add(int(r.r))
+        for t in toks(r.kw):
+            ent["키워드"].setdefault(t, set()).add(int(r.r))
+        for c in chs[r.id]:
+            if c["role"] != "배열" and c["t"]:
+                ent["선지문장"].setdefault(re.sub(r"\s+", " ", c["t"]).strip(), set()).add(int(r.r))
+    rows = []
+    for kind, dd in ent.items():
+        gaps = [b - a for rs in dd.values() for a, b in zip(sorted(rs), sorted(rs)[1:])]
+        tot_ = len(gaps)
+        for lb in [str(i) for i in range(1, 11)] + ["11+"]:
+            n_ = sum(1 for g_ in gaps if (str(g_) if g_ <= 10 else "11+") == lb)
+            rows.append(dict(대상=kind, 간격=lb, 건수=n_, 비중=100 * n_ / tot_))
+    compare("단서5_재출제간격분포", sub, pd.DataFrame(rows), ["대상", "간격"])
+
 # ---------------------------------------------------------------- B. 마크다운 표 ↔ CSV
 SHORT = {"선사": "제1장 선사 문화", "고대": "제2장 한국 고대사", "고려": "제3장 고려시대사", "조선": "제4장 조선시대사",
          "근대": "제5장 한국 근대사", "일제": "제6장 일제 강점기", "현대": "제7장 한국 현대사", "복합": "제8장 복합 문항", "부록": "특별 부록"}
@@ -546,6 +591,8 @@ tmap = {  # 대시보드 표 id -> CSV 이름 접두
     "P6": "교수6_재출제_선지문장", "P6b": "교수6_재출제_요약",
     "E1": "시대1_소주제_비중과주기", "E2": "시대2_소주제카드_키워드", "E3": "시대3_소주제카드_함정짝",
     "E4": "시대4_세분류_비중", "E5": "시대5_시대요약", "E6": "시대6_소주제_구간변화",
+    "Q1": "단서1_소주제_회차이력", "Q2": "단서2_회차별_시대배분", "Q3": "단서3_회차별_유형배분",
+    "Q4": "단서4_키워드_출제이력", "Q5": "단서5_재출제간격분포",
 }
 for tid, name in tmap.items():
     for sub in ("전체", "확인"):
