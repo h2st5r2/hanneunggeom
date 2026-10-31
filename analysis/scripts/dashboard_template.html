@@ -1,0 +1,386 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>한능검 출제 경향 대시보드</title>
+<style>
+:root{
+  color-scheme:light;
+  --surface:#fcfcfb; --card:#ffffff; --line:#e4e3de; --grid:#ecebe6;
+  --text:#0b0b0b; --text2:#52514e; --muted:#7a7972;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --s4:#eda100; --s5:#e87ba4; --s6:#008300; --s7:#6250d6;
+  --warn-bg:#fff4e0; --warn-line:#eda100;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    color-scheme:dark;
+    --surface:#1a1a19; --card:#232321; --line:#3a3a37; --grid:#2f2f2c;
+    --text:#f0efec; --text2:#c3c2b7; --muted:#9a998f;
+    --s1:#3987e5; --s2:#d95926; --s3:#199e70; --s4:#c98500; --s5:#d55181; --s6:#008300; --s7:#9085e9;
+    --warn-bg:#33290f; --warn-line:#c98500;
+  }
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--surface);color:var(--text);font:15px/1.55 -apple-system,"Apple SD Gothic Neo","Noto Sans KR","Malgun Gothic",sans-serif}
+header{position:sticky;top:0;z-index:5;background:var(--surface);border-bottom:1px solid var(--line);padding:12px 16px}
+.wrap{max-width:1080px;margin:0 auto}
+h1{font-size:18px;margin:0 0 8px}
+.bar{display:flex;flex-wrap:wrap;gap:8px 20px;align-items:center}
+.seg{display:inline-flex;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.seg button{border:0;background:transparent;color:var(--text2);padding:7px 14px;font:inherit;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--s1);color:#fff}
+.seg button:focus-visible{outline:2px solid var(--s1);outline-offset:-2px}
+main{padding:16px}
+.note{background:var(--warn-bg);border-left:4px solid var(--warn-line);padding:10px 14px;margin:0 0 16px;border-radius:4px;font-size:14px}
+section.card{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:16px;margin:0 0 16px}
+section.card h2{font-size:16px;margin:0 0 4px}
+section.card p.d{margin:0 0 12px;color:var(--text2);font-size:13.5px}
+h3{font-size:14px;margin:16px 0 6px;color:var(--text)}
+svg.chart{width:100%;height:auto;display:block;overflow:visible}
+svg text{fill:var(--text2);font-size:12px;font-family:inherit}
+svg text.val{fill:var(--text)}
+svg .ax{stroke:var(--grid);stroke-width:1}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--text2);margin:0 0 6px}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:5px;vertical-align:-1px}
+.scroll{max-height:440px;overflow:auto;border:1px solid var(--line);border-radius:6px}
+table{border-collapse:collapse;width:100%;font-size:13px}
+th,td{padding:6px 9px;text-align:right;border-bottom:1px solid var(--line);white-space:nowrap}
+th{position:sticky;top:0;background:var(--card);color:var(--text2);font-weight:600}
+td.l,th.l{text-align:left;white-space:normal}
+.cards{display:flex;flex-wrap:wrap;gap:10px;margin:0 0 12px}
+.stat{border:1px solid var(--line);border-radius:8px;padding:8px 14px;min-width:130px}
+.stat b{display:block;font-size:22px;line-height:1.2}
+.stat span{font-size:12.5px;color:var(--text2)}
+select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--text);max-width:100%}
+#tip{position:fixed;z-index:20;pointer-events:none;background:var(--text);color:var(--surface);padding:6px 9px;border-radius:6px;font-size:12.5px;max-width:320px;white-space:pre-line;display:none}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+@media (max-width:760px){.two{grid-template-columns:1fr}}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header><div class="wrap">
+  <h1>한국사능력검정시험 심화 출제 경향 대시보드 <span style="font-weight:400;color:var(--text2);font-size:13px">47~79회</span></h1>
+  <div class="bar">
+    <div class="seg" role="group" aria-label="보고서 선택" id="tabs">
+      <button data-tab="learner" aria-pressed="true">학습자용</button>
+      <button data-tab="prof" aria-pressed="false">교수자용</button>
+    </div>
+    <div class="seg" role="group" aria-label="집계 기준" id="subs">
+      <button data-sub="전체" aria-pressed="true">전체</button>
+      <button data-sub="확인" aria-pressed="false">확인 문항만</button>
+    </div>
+  </div>
+</div></header>
+<main><div class="wrap" id="app"></div></main>
+<div id="tip"></div>
+<script id="DATA" type="application/json">/*__DATA__*/null</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("DATA").textContent);
+const M = D._meta;
+const state = { tab: "learner", sub: "전체", l3: null };
+const T = id => D[id][state.sub];
+const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const f1 = v => v == null ? "-" : Number(v).toFixed(1);
+const f2 = v => v == null ? "-" : Number(v).toFixed(2);
+const fi = v => v == null ? "-" : String(v);
+const sum = a => a.reduce((x, y) => x + y, 0);
+const SH = c => M.short[c] || c;
+const trunc = (s, n) => { s = String(s); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+
+/* ---------- 차트 도우미 ---------- */
+function barPath(x, y, w, h) {
+  const r = Math.min(4, w, h / 2);
+  if (w <= 0) return "";
+  return `M${x} ${y}h${w - r}a${r} ${r} 0 0 1 ${r} ${r}v${h - 2 * r}a${r} ${r} 0 0 1 ${-r} ${r}h${-(w - r)}z`;
+}
+function legend(items) {
+  return `<div class="legend">${items.map(i => `<span><i style="background:${i.c}"></i>${esc(i.n)}</span>`).join("")}</div>`;
+}
+function hbar(rows, o) {
+  const W = 700, lw = o.lw || 210, rw = o.rw || 120, bh = o.bh || 14, gap = 9;
+  const h = rows.length * (bh + gap) + 6, pw = W - lw - rw;
+  const max = o.max || Math.max(1e-9, ...rows.map(o.value));
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${h}" role="img" aria-label="${esc(o.aria)}">`;
+  rows.forEach((r, i) => {
+    const y = 4 + i * (bh + gap), v = o.value(r), w = v / max * pw;
+    s += `<text x="${lw - 8}" y="${y + bh - 3}" text-anchor="end">${esc(trunc(o.label(r), 24))}</text>`;
+    s += `<path d="${barPath(lw, y, w, bh)}" fill="${o.color || "var(--s1)"}"/>`;
+    s += `<text class="val" x="${lw + w + 6}" y="${y + bh - 3}">${esc(o.fmt ? o.fmt(r) : v)}</text>`;
+    s += `<rect x="0" y="${y - gap / 2}" width="${W}" height="${bh + gap}" fill="transparent" data-tip="${esc(o.tip ? o.tip(r) : o.label(r))}"/>`;
+  });
+  return s + "</svg>";
+}
+function hbar2(rows, o) {
+  const W = 700, lw = o.lw || 210, rw = 60, bh = 10, gap = 10;
+  const rh = 2 * bh + 2 + gap, h = rows.length * rh + 6, pw = W - lw - rw;
+  const max = Math.max(1e-9, ...rows.map(r => Math.max(o.a.value(r), o.b.value(r))));
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${h}" role="img" aria-label="${esc(o.aria)}">`;
+  rows.forEach((r, i) => {
+    const y = 4 + i * rh;
+    s += `<text x="${lw - 8}" y="${y + bh + 4}" text-anchor="end">${esc(trunc(o.label(r), 24))}</text>`;
+    [o.a, o.b].forEach((sr, k) => {
+      const v = sr.value(r), w = v / max * pw, yy = y + k * (bh + 2);
+      s += `<path d="${barPath(lw, yy, w, bh)}" fill="${sr.color}"/>`;
+      s += `<text class="val" x="${lw + w + 5}" y="${yy + bh - 1}" style="font-size:11px">${esc(sr.fmt ? sr.fmt(v) : v)}</text>`;
+    });
+    s += `<rect x="0" y="${y - gap / 2}" width="${W}" height="${rh}" fill="transparent" data-tip="${esc(o.tip(r))}"/>`;
+  });
+  return s + "</svg>";
+}
+function vbar(rows, o) {
+  const W = 700, H = 230, pl = 36, pb = 44, pt = 22, n = rows.length;
+  const pw = W - pl - 8, ph = H - pb - pt, max = o.max || Math.max(1e-9, ...rows.map(o.value));
+  const cw = pw / n, bw = Math.min(46, cw * 0.62);
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">`;
+  [0, 0.5, 1].forEach(t => {
+    const y = pt + ph * (1 - t);
+    s += `<line class="ax" x1="${pl}" x2="${W - 8}" y1="${y}" y2="${y}"/><text x="${pl - 6}" y="${y + 4}" text-anchor="end">${(max * t).toFixed(o.dec ?? 0)}</text>`;
+  });
+  rows.forEach((r, i) => {
+    const v = o.value(r), h = v / max * ph, x = pl + i * cw + (cw - bw) / 2, y = pt + ph - h;
+    s += `<path d="M${x} ${pt + ph}v${-Math.max(h - 4, 0)}a4 4 0 0 1 4 -4h${bw - 8}a4 4 0 0 1 4 4v${Math.max(h - 4, 0)}z" fill="${o.color || "var(--s1)"}"/>`;
+    s += `<text class="val" x="${x + bw / 2}" y="${y - 5}" text-anchor="middle">${esc(o.fmt ? o.fmt(v) : v)}</text>`;
+    s += `<text x="${x + bw / 2}" y="${H - pb + 16}" text-anchor="middle">${esc(o.label(r))}</text>`;
+    s += `<rect x="${pl + i * cw}" y="${pt}" width="${cw}" height="${ph + 20}" fill="transparent" data-tip="${esc(o.tip(r))}"/>`;
+  });
+  return s + "</svg>";
+}
+function rangeChart(rows, o) {
+  const W = 700, lw = o.lw || 200, rw = 50, rh = o.rh || 20, h = rows.length * rh + 24, pw = W - lw - rw;
+  const max = Math.max(1, ...rows.map(r => r.최대));
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${h}" role="img" aria-label="${esc(o.aria)}">`;
+  for (let t = 0; t <= max; t += max > 12 ? 4 : 2) {
+    const x = lw + t / max * pw;
+    s += `<line class="ax" x1="${x}" x2="${x}" y1="14" y2="${h}"/><text x="${x}" y="10" text-anchor="middle">${t}</text>`;
+  }
+  rows.forEach((r, i) => {
+    const y = 20 + i * rh, cy = y + rh / 2 - 3;
+    const x1 = lw + r.최소 / max * pw, x2 = lw + r.최대 / max * pw, xm = lw + r.평균 / max * pw;
+    s += `<text x="${lw - 8}" y="${cy + 4}" text-anchor="end">${esc(trunc(o.label(r), 24))}</text>`;
+    s += `<line x1="${x1}" x2="${x2}" y1="${cy}" y2="${cy}" stroke="var(--s1)" stroke-width="2" opacity=".55"/>`;
+    s += `<circle cx="${xm}" cy="${cy}" r="5" fill="var(--s1)" stroke="var(--card)" stroke-width="2"/>`;
+    s += `<text class="val" x="${x2 + 8}" y="${cy + 4}" style="font-size:11px">${f1(r.평균)}</text>`;
+    s += `<rect x="0" y="${y - 3}" width="${W}" height="${rh}" fill="transparent" data-tip="${esc(`${o.label(r)}\n평균 ${f2(r.평균)} · 최소 ${r.최소} · 최대 ${r.최대}\n출제 회차 ${r.출제회차수}/33`)}"/>`;
+  });
+  return s + "</svg>";
+}
+function diverging(rows, o) {
+  const W = 700, lw = 230, rw = 60, bh = 14, gap = 9, h = rows.length * (bh + gap) + 6;
+  const pw = W - lw - rw, max = Math.max(1e-9, ...rows.map(r => Math.abs(o.value(r)))), c0 = lw + pw / 2;
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${h}" role="img" aria-label="${esc(o.aria)}"><line class="ax" x1="${c0}" x2="${c0}" y1="0" y2="${h}"/>`;
+  rows.forEach((r, i) => {
+    const y = 4 + i * (bh + gap), v = o.value(r), w = Math.abs(v) / max * (pw / 2), pos = v >= 0;
+    s += `<text x="${lw - 8}" y="${y + bh - 3}" text-anchor="end">${esc(trunc(o.label(r), 26))}</text>`;
+    s += `<rect x="${pos ? c0 : c0 - w}" y="${y}" width="${w}" height="${bh}" rx="3" fill="${pos ? "var(--s1)" : "var(--s2)"}"/>`;
+    s += `<text class="val" x="${pos ? c0 + w + 5 : c0 - w - 5}" y="${y + bh - 3}" text-anchor="${pos ? "start" : "end"}">${v > 0 ? "+" : ""}${v.toFixed(2)}</text>`;
+    s += `<rect x="0" y="${y - gap / 2}" width="${W}" height="${bh + gap}" fill="transparent" data-tip="${esc(o.tip(r))}"/>`;
+  });
+  return s + "</svg>";
+}
+function heat(rows, cols, o) {
+  const cw = 78, rh = 34, lw = 70, W = lw + cols.length * cw, H = 26 + rows.length * rh;
+  const max = Math.max(1, ...rows.flatMap(r => cols.map(c => r[c])));
+  let s = `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">`;
+  cols.forEach((c, j) => { s += `<text x="${lw + j * cw + cw / 2}" y="14" text-anchor="middle">${esc(SH(c))}</text>`; });
+  rows.forEach((r, i) => {
+    s += `<text x="${lw - 8}" y="${26 + i * rh + rh / 2 + 4}" text-anchor="end">${esc(r.번호대)}</text>`;
+    cols.forEach((c, j) => {
+      const v = r[c], t = v / max, dark = t > 0.5;
+      s += `<rect x="${lw + j * cw + 1}" y="${26 + i * rh + 1}" width="${cw - 2}" height="${rh - 2}" rx="3" fill="color-mix(in srgb, var(--s1) ${Math.round(t * 100)}%, var(--card))" data-tip="${esc(`${r.번호대} · ${c}\n${v}문항 (번호대 합계 ${r.합계}문항 중 ${r.합계 ? (100 * v / r.합계).toFixed(1) : "0.0"}%)`)}"/>`;
+      s += `<text x="${lw + j * cw + cw / 2}" y="${26 + i * rh + rh / 2 + 4}" text-anchor="middle" style="fill:${dark ? "#fff" : "var(--text)"};pointer-events:none">${v}</text>`;
+    });
+  });
+  return s + "</svg>";
+}
+const SER = ["var(--s1)", "var(--s2)", "var(--s3)", "var(--s4)", "var(--s5)", "var(--s6)", "var(--s7)"];
+function lineChart(series, xs, o) {
+  const W = 700, H = 300, pl = 34, pr = 10, pt = 10, pb = 28, pw = W - pl - pr, ph = H - pt - pb;
+  const x = r => pl + (r - xs[0]) / (xs[xs.length - 1] - xs[0]) * pw, y = v => pt + (v - 1) / 49 * ph;
+  let s = legend(series.map(se => ({ n: se.name, c: se.color })));
+  s += `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">`;
+  [1, 10, 20, 30, 40, 50].forEach(v => { s += `<line class="ax" x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}"/><text x="${pl - 6}" y="${y(v) + 4}" text-anchor="end">${v}</text>`; });
+  xs.filter((r, i) => i % 4 === 0 || r === xs[xs.length - 1]).forEach(r => { s += `<text x="${x(r)}" y="${H - 8}" text-anchor="middle">${r}회</text>`; });
+  series.forEach(se => {
+    let d = "", pen = false;
+    xs.forEach(r => { const v = se.byR[r]; if (v == null) { pen = false; return; } d += `${pen ? "L" : "M"}${x(r).toFixed(1)} ${y(v).toFixed(1)}`; pen = true; });
+    s += `<path d="${d}" fill="none" stroke="${se.color}" stroke-width="2" stroke-linejoin="round"/>`;
+  });
+  const cw = pw / (xs.length - 1);
+  xs.forEach(r => {
+    const tip = `${r}회 중앙 번호\n` + series.map(se => `${se.name} ${se.byR[r] == null ? "-" : se.byR[r]}`).join("\n");
+    s += `<rect x="${x(r) - cw / 2}" y="${pt}" width="${cw}" height="${ph}" fill="transparent" data-tip="${esc(tip)}"/>`;
+  });
+  return s + "</svg>";
+}
+function gcol(labels, a, b, o) {
+  const W = 700, H = 200, pl = 30, pb = 26, pt = 10, pw = W - pl - 8, ph = H - pb - pt, n = labels.length, cw = pw / n;
+  const max = Math.max(1, ...a.vals, ...b.vals);
+  let s = legend([{ n: a.name, c: a.color }, { n: b.name, c: b.color }]);
+  s += `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(o.aria)}">`;
+  [0, 0.5, 1].forEach(t => { const y = pt + ph * (1 - t); s += `<line class="ax" x1="${pl}" x2="${W - 8}" y1="${y}" y2="${y}"/><text x="${pl - 5}" y="${y + 4}" text-anchor="end">${Math.round(max * t)}</text>`; });
+  labels.forEach((l, i) => {
+    const bw = Math.max(2, cw * 0.36);
+    [[a, 0], [b, 1]].forEach(([se, k]) => {
+      const v = se.vals[i], h = v / max * ph;
+      s += `<rect x="${pl + i * cw + cw * 0.12 + k * (bw + 1)}" y="${pt + ph - h}" width="${bw}" height="${h}" rx="1.5" fill="${se.color}"/>`;
+    });
+    if (l % 5 === 0 || l === 1) s += `<text x="${pl + i * cw + cw / 2}" y="${H - 8}" text-anchor="middle">${l}</text>`;
+    s += `<rect x="${pl + i * cw}" y="${pt}" width="${cw}" height="${ph}" fill="transparent" data-tip="${esc(`${l}번\n${a.name} ${a.vals[i]}문항 · ${b.name} ${b.vals[i]}문항`)}"/>`;
+  });
+  return s + "</svg>";
+}
+function tbl(rows, cols, o = {}) {
+  let s = `<div class="scroll" style="${o.maxh ? `max-height:${o.maxh}px` : ""}"><table><thead><tr>${cols.map(c => `<th class="${c.l ? "l" : ""}">${esc(c.n)}</th>`).join("")}</tr></thead><tbody>`;
+  rows.forEach(r => { s += "<tr>" + cols.map(c => `<td class="${c.l ? "l" : ""}">${esc(c.f ? c.f(r) : r[c.k] == null ? "-" : r[c.k])}</td>`).join("") + "</tr>"; });
+  return s + "</tbody></table></div>";
+}
+const card = (title, desc, body) => `<section class="card"><h2>${esc(title)}</h2><p class="d">${esc(desc)}</p>${body}</section>`;
+
+/* ---------- 학습자용 ---------- */
+function learner() {
+  const out = [];
+  const l1b = T("L1b"), l1a = [...T("L1a")].sort((a, b) => b.문항수 - a.문항수 || (a.대주제 < b.대주제 ? -1 : 1)).slice(0, 15);
+  out.push(card("1. 시대별 출제 비중", "한 회차 50문항 중 시대별 평균 문항 수(33회차 평균). 확인 기준은 확인 문항만 센 값이다.",
+    vbar(l1b, { aria: "시대별 회차당 평균 문항 수", value: r => r.회차당평균, label: r => SH(r.시대), fmt: v => v.toFixed(1), dec: 0,
+      tip: r => `${r.시대}\n${r.문항수}문항 · 회차당 ${f2(r.회차당평균)} · 비중 ${f1(r.비중)}%` }) +
+    "<h3>대주제 상위 15개</h3>" +
+    hbar(l1a, { aria: "대주제별 회차당 평균 문항 수", label: r => `${r.대주제} ${r.대주제명}`, value: r => r.회차당평균, fmt: r => `${f2(r.회차당평균)} (${f1(r.비중)}%)`,
+      tip: r => `${r.대주제} ${r.대주제명}\n${r.시대}\n${r.문항수}문항 · 회차당 ${f2(r.회차당평균)}` })));
+
+  const l2 = T("L2").slice(0, 15);
+  out.push(card("2. 소주제별 빈출 순위", "출제 문항 수 상위 15개 소주제. 막대 옆에 최근 출제 회차를 적었다.",
+    hbar(l2, { aria: "소주제별 출제 횟수", lw: 230, rw: 150, label: r => `${r.소주제명}`, value: r => r.출제횟수, fmt: r => `${r.출제횟수}문항 · 최근 ${r.최근출제회차}회`,
+      tip: r => `${r.소주제} ${r.소주제명}\n출제 ${r.출제횟수}문항 · ${r.출제회차수}개 회차\n최근 ${r.최근출제회차}회(이후 ${r.미출제회차수}회 미출제)` }) +
+    `<p class="d" style="margin-top:8px">출제 0회 소주제 ${T("L2").filter(r => r.출제횟수 === 0).length}개 (전체 ${T("L2").length}개 중).</p>`));
+
+  const codes = [...new Set(T("L3").map(r => r.소주제))];
+  const names = {}; T("L3").forEach(r => names[r.소주제] = r.소주제명);
+  if (!codes.includes(state.l3)) state.l3 = codes.includes("16-1") ? "16-1" : codes[0];
+  out.push(card("3. 단서 → 정답 짝", "소주제를 고르면 자료 키워드와 정답 선지 키워드의 짝을 문항 수 순으로 보여 준다(상위 5개). 전체 목록은 tables/ CSV.",
+    `<label>소주제 <select id="l3sel">${codes.map(c => `<option value="${c}" ${c === state.l3 ? "selected" : ""}>${esc(c + " " + names[c])}</option>`).join("")}</select></label><div id="l3tbl"></div>`));
+
+  const l4a = T("L4a").slice(0, 15);
+  out.push(card("4. 함정 선지", "오답 선지에 자주 나온 키워드(오답 role 문항 수)와, 같은 키워드가 정답 선지로 나온 문항 수.",
+    legend([{ n: "오답으로 나온 문항 수", c: "var(--s2)" }, { n: "정답으로 나온 문항 수", c: "var(--s1)" }]) +
+    hbar2(l4a, { aria: "함정 키워드", label: r => r.키워드, a: { value: r => r.오답문항수, color: "var(--s2)" }, b: { value: r => r.정답문항수, color: "var(--s1)" },
+      tip: r => `${r.키워드}\n오답 ${r.오답문항수}문항 · 정답 ${r.정답문항수}문항 (오답 비율 ${f1(r.오답비율)}%)\n주 소주제 ${r.주소주제} ${r.소주제명 || ""}` }) +
+    "<h3>정답 소주제와 함께 오답으로 묶이는 짝 (상위 15개)</h3>" +
+    tbl(T("L4b").slice(0, 15), [{ n: "정답 소주제", l: 1, f: r => `${r.정답소주제} ${r.정답소주제명}` }, { n: "오답 소주제", l: 1, f: r => `${r.오답소주제} ${r.오답소주제명}` }, { n: "문항수", k: "문항수" }, { n: "정답 소주제 문항수", k: "정답소주제문항수" }, { n: "같은 대주제", k: "같은대주제" }])));
+
+  const l5 = T("L5a").filter(r => r.판정 === "집중").slice(0, 15);
+  out.push(card("5. 최근 10회(70~79회) 집중 출제", "최근 4문항 이상이면서 이전 23회(47~69회)보다 회차당 1.5배 이상(이전 0회 포함)인 소주제와 키워드.",
+    legend([{ n: "최근 10회 회차당 문항", c: "var(--s1)" }, { n: "이전 23회 회차당 문항", c: "var(--s2)" }]) +
+    (l5.length ? hbar2(l5, { aria: "최근 10회 집중 소주제", lw: 230, label: r => r.소주제명, a: { value: r => r.최근회차당, color: "var(--s1)", fmt: v => v.toFixed(2) }, b: { value: r => r.이전회차당, color: "var(--s2)", fmt: v => v.toFixed(2) },
+      tip: r => `${r.소주제} ${r.소주제명}\n최근 ${r.최근10회문항수}문항 / 이전 ${r.이전23회문항수}문항\n배율 ${r.배율 == null ? "이전 0회" : f2(r.배율)}` }) : "<p class='d'>해당 소주제 없음</p>") +
+    "<h3>키워드</h3>" +
+    tbl(T("L5b").filter(r => r.판정 === "집중").slice(0, 20), [{ n: "키워드", l: 1, k: "키워드" }, { n: "최근 10회", k: "최근10회문항수" }, { n: "이전 23회", k: "이전23회문항수" }, { n: "배율", f: r => r.배율 == null ? "-" : f2(r.배율) }])));
+
+  const bt = T("L6b").find(r => r.대상회차 === "합계");
+  out.push(card("6. 재출제 간격으로 본 80회 후보 키워드", "규칙: 서로 다른 4개 회차 이상 출제, 경과 회차(80 − 최근 출제 회차) ≥ 간격 중앙값. 백테스트에서 빈도 상위보다 적중률이 낮았으므로 참고용이다.",
+    `<h3>70~79회 백테스트 적중률(%)</h3>` +
+    vbar([{ n: "간격 규칙 후보", v: bt.후보적중률 }, { n: "빈도 상위(같은 개수)", v: bt.빈도상위적중률 }, { n: "대상 전체", v: bt.전체대상적중률 }],
+      { aria: "백테스트 적중률", value: r => r.v, label: r => r.n, fmt: v => v.toFixed(1), dec: 0, tip: r => `${r.n}: ${r.v.toFixed(1)}%` }) +
+    "<h3>후보 키워드 (출제 회차 수 순, 상위 25개)</h3>" +
+    tbl(T("L6").filter(r => r.후보 === "예").slice(0, 25), [{ n: "키워드", l: 1, k: "키워드" }, { n: "출제 회차 수", k: "출제회차수" }, { n: "최근 출제", k: "최근출제회차" }, { n: "간격 중앙값", k: "간격중앙값" }, { n: "경과 회차", k: "경과회차" }, { n: "도래비", f: r => f2(r.도래비) }, { n: "최근 10회 출제 회차", k: "최근10회출제회차수" }])));
+  return out.join("");
+}
+function bindL3() {
+  const sel = document.getElementById("l3sel"); if (!sel) return;
+  const draw = () => {
+    const rows = T("L3").filter(r => r.소주제 === state.l3);
+    document.getElementById("l3tbl").innerHTML = `<p class="d" style="margin:8px 0">정답 role 문항 ${rows.length ? rows[0].소주제정답문항수 : 0}개</p>` +
+      tbl(rows, [{ n: "순위", k: "소주제내순위" }, { n: "자료 키워드", l: 1, k: "자료키워드" }, { n: "정답 키워드", l: 1, k: "정답키워드" }, { n: "문항수", k: "문항수" }]);
+  };
+  sel.onchange = () => { state.l3 = sel.value; draw(); };
+  draw();
+}
+
+/* ---------- 교수자용 ---------- */
+function prof() {
+  const out = [];
+  out.push(card("1. 회차별 시대 배분", "33회차의 시대(장)·대주제별 문항 수. 점은 평균, 선은 최소~최대.",
+    rangeChart(T("P1c"), { aria: "시대별 문항 수 범위", label: r => r.시대, rh: 24 }) +
+    "<h3>대주제별 (스크롤)</h3><div class='scroll' style='max-height:420px;padding:6px'>" +
+    rangeChart(T("P1b"), { aria: "대주제별 문항 수 범위", label: r => `${r.대주제} ${r.대주제명}`, rh: 20 }) + "</div>"));
+
+  const p2a = T("P2a");
+  const eras = M.chapters.slice(0, 7), P2b = T("P2b");
+  const series = eras.map((ch, i) => {
+    const byR = {}; P2b.filter(r => r.시대 === ch).forEach(r => byR[r.회차] = r.중앙번호);
+    return { name: SH(ch), color: SER[i], byR };
+  });
+  const inv = T("P2d");
+  const invAvg = (lo, hi) => { const a = inv.filter(r => r.회차 >= lo && r.회차 <= hi).map(r => r.역행횟수); return sum(a) / a.length; };
+  out.push(card("2. 문항 번호대와 시대, 회차별 경계", "번호대 × 시대 문항 수와, 회차별 각 시대 문항의 중앙 번호.",
+    heat(p2a, M.chapters, { aria: "번호대와 시대의 문항 수" }) +
+    `<h3>시대별 중앙 번호의 회차 추이</h3>` + lineChart(series, M.rounds, { aria: "회차별 시대 중앙 번호" }) +
+    `<p class="d" style="margin-top:8px">시대 순서가 거꾸로 뛰는 횟수(회차당 평균): 47~59회 ${f2(invAvg(47, 59))}, 60~69회 ${f2(invAvg(60, 69))}, 70~79회 ${f2(invAvg(70, 79))}.</p>`));
+
+  const p3a = T("P3a"), zero = p3a.filter(r => r.문항수 === 0);
+  const g = {}; zero.forEach(r => { (g[r.소주제] = g[r.소주제] || { c: r.소주제, n: r.소주제명, items: [] }).items.push(`${r.묶음} ${r.묶음명}`); });
+  const p3d = T("P3d").slice(0, 15);
+  out.push(card("3. 세분류 묶음과 오래 안 나온 소주제", "taxonomy.json abc 묶음별 출제 수. 확인 기준은 검수 범위가 좁아 미출제 묶음이 많다.",
+    `<div class="cards"><div class="stat"><b>${p3a.length}</b><span>묶음 수</span></div><div class="stat"><b>${zero.length}</b><span>한 번도 안 나온 묶음</span></div><div class="stat"><b>${f1(100 * zero.length / p3a.length)}%</b><span>미출제 비율</span></div></div>` +
+    "<h3>미출제 묶음 (소주제별)</h3>" +
+    tbl(Object.values(g), [{ n: "소주제", l: 1, f: r => `${r.c} ${r.n}` }, { n: "미출제 묶음", l: 1, f: r => r.items.join("; ") }], { maxh: 320 }) +
+    "<h3>미출제 기간이 긴 소주제 (상위 15개)</h3>" +
+    hbar(p3d, { aria: "소주제별 미출제 회차 수", lw: 230, rw: 150, max: 33, label: r => r.소주제명, value: r => r.미출제회차수 == null ? 33 : r.미출제회차수,
+      fmt: r => r.미출제회차수 == null ? "한 번도 안 나옴" : `${r.미출제회차수}회 · 마지막 ${r.최근출제회차}회`,
+      tip: r => `${r.소주제} ${r.소주제명}\n출제 ${r.출제횟수}문항\n` + (r.미출제회차수 == null ? "47~79회 출제 없음" : `마지막 출제 ${r.최근출제회차}회`) })));
+
+  const p4a = T("P4a");
+  const p4d = T("P4d");
+  out.push(card("4. 발문 유형과 부정형·세트 위치", "유형별 문항 수, 부정형(neg)과 세트(set) 문항이 놓이는 번호.",
+    hbar(p4a, { aria: "발문 유형 분포", lw: 100, label: r => r.유형, value: r => r.문항수, fmt: r => `${r.문항수}문항 (${f1(r.비중)}%)`,
+      tip: r => `${r.유형}: ${r.문항수}문항\n주요 시대 ${r.주요시대} (${f1(r.주요시대내비중)}%)\n주요 대주제 ${r.주요대주제}` }) +
+    "<h3>유형별 주요 시대</h3>" +
+    tbl(p4a, [{ n: "유형", l: 1, k: "유형" }, { n: "부정형", k: "부정형문항수" }, { n: "주요 시대", l: 1, k: "주요시대" }, { n: "그 시대 문항", k: "주요시대문항수" }, { n: "시대 내 비중(%)", f: r => f1(r.주요시대내비중) }, { n: "주요 대주제", l: 1, k: "주요대주제" }]) +
+    "<h3>번호별 부정형·세트 문항 수 (33회차 합)</h3>" +
+    gcol(p4d.map(r => r.번호), { name: "부정형", color: "var(--s2)", vals: p4d.map(r => r.부정형) }, { name: "세트", color: "var(--s1)", vals: p4d.map(r => r.세트문항) }, { aria: "번호별 부정형과 세트 문항 수" })));
+
+  const p5a = [...T("P5a")];
+  const up = [...p5a].sort((a, b) => b.변화_C_A - a.변화_C_A || (a.소주제 < b.소주제 ? -1 : 1)).slice(0, 10);
+  const dn = [...p5a].sort((a, b) => a.변화_C_A - b.변화_C_A || (a.소주제 < b.소주제 ? -1 : 1)).slice(0, 10);
+  const tp = r => `${r.소주제 || r.유형 || r.시대} ${r.소주제명 || ""}\n회차당 47~59회 ${f2(r["47~59회_회차당"])} → 60~69회 ${f2(r["60~69회_회차당"])} → 70~79회 ${f2(r["70~79회_회차당"])}\nz ${r.z값 == null ? "-" : f2(r.z값)}`;
+  const chg = [{ n: "47~59회", f: r => f2(r["47~59회_회차당"]) }, { n: "60~69회", f: r => f2(r["60~69회_회차당"]) }, { n: "70~79회", f: r => f2(r["70~79회_회차당"]) }, { n: "변화(C−A)", f: r => f2(r.변화_C_A) }, { n: "z", f: r => r.z값 == null ? "-" : f2(r.z값) }];
+  out.push(card("5. 구간별 증감", "회차당 문항 수의 구간 비교(47~59회 13회, 60~69회 10회, 70~79회 10회). 파랑은 70~79회에 늘어난 소주제, 주황은 줄어든 소주제.",
+    diverging([...up, ...dn.slice().reverse()], { aria: "소주제별 회차당 문항 수 변화", value: r => r.변화_C_A, label: r => r.소주제명, tip: tp }) +
+    "<h3>시대</h3>" + tbl(T("P5c"), [{ n: "시대", l: 1, k: "시대" }, ...chg]) +
+    "<h3>발문 유형</h3>" + tbl(T("P5b"), [{ n: "유형", l: 1, k: "유형" }, ...chg])));
+
+  const s6 = T("P6b")[0];
+  out.push(card("6. 다시 나온 선지 문장", "공백을 정리해 완전히 같은 문장이 둘 이상의 회차에 나온 경우(배열 선지 제외).",
+    `<div class="cards"><div class="stat"><b>${s6.둘이상회차에등장한문장수.toLocaleString()}</b><span>재출제 문장 수</span></div><div class="stat"><b>${f1(s6.선지중비율)}%</b><span>전체 선지 중 해당 비율</span></div><div class="stat"><b>${s6.서로다른문장수.toLocaleString()}</b><span>서로 다른 문장 수</span></div></div>` +
+    tbl(T("P6").slice(0, 25), [{ n: "선지 문장", l: 1, k: "선지문장" }, { n: "등장", k: "등장횟수" }, { n: "회차 수", k: "등장회차수" }, { n: "회차", l: 1, k: "회차" }, { n: "정답", k: "정답" }, { n: "오답", k: "오답" }], { maxh: 420 })));
+  return out.join("");
+}
+
+/* ---------- 렌더 ---------- */
+function render() {
+  const nConf = M.nConf;
+  const warn = state.sub === "확인"
+    ? `<div class="note"><b>확인 문항만 보는 중:</b> 확인 ${nConf}문항은 선사~조선 시대에 ${M.confEarlyPct}%가 몰려 있어 근대·일제·현대 항목이 거의 비어 있다. 시험 전체의 경향은 "전체"로 본다.</div>` : "";
+  document.getElementById("app").innerHTML = warn + (state.tab === "learner" ? learner() : prof());
+  if (state.tab === "learner") bindL3();
+}
+document.getElementById("tabs").onclick = e => { const b = e.target.closest("button"); if (!b) return; state.tab = b.dataset.tab; syncBtns(); render(); };
+document.getElementById("subs").onclick = e => { const b = e.target.closest("button"); if (!b) return; state.sub = b.dataset.sub; syncBtns(); render(); };
+function syncBtns() {
+  document.querySelectorAll("#tabs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.tab === state.tab)));
+  document.querySelectorAll("#subs button").forEach(b => b.setAttribute("aria-pressed", String(b.dataset.sub === state.sub)));
+}
+const tip = document.getElementById("tip");
+document.addEventListener("mousemove", e => {
+  const t = e.target.closest && e.target.closest("[data-tip]");
+  if (!t) { tip.style.display = "none"; return; }
+  tip.textContent = t.getAttribute("data-tip"); tip.style.display = "block";
+  const w = tip.offsetWidth, x = Math.min(e.clientX + 14, innerWidth - w - 8);
+  tip.style.left = Math.max(8, x) + "px"; tip.style.top = (e.clientY + 16) + "px";
+});
+render();
+</script>
+</body>
+</html>
