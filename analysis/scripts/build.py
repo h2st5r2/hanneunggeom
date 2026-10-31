@@ -61,6 +61,8 @@ def fmt(v, col):
 
 
 def table(df, cols=None, n=None, rename=None):
+    if len(df) == 0:
+        return "해당 행 없음\n"
     if cols:
         df = df[cols]
     if n:
@@ -99,6 +101,11 @@ def mtable(m, keys, vals, rename=None):
 def j(word, with_final, without_final):
     code = ord(word[-1]) - 0xAC00
     return with_final if 0 <= code < 11172 and code % 28 != 0 else without_final
+
+
+def j2(word):
+    code = ord(word[-1]) - 0xAC00
+    return "로" if not (0 <= code < 11172) or code % 28 in (0, 8) else "으로"
 
 
 def shortcols(df):
@@ -384,6 +391,66 @@ mix = {s_: int((R["P6"][s_]["역할혼재"] == "예").sum()) for s_ in SUBS}
 s.append(f"역할혼재 문장은 전체 {mix['전체']}개, 확인 {mix['확인']}개이다. 전체 목록은 `교수6_재출제_선지문장_*.csv`에 있다.\n")
 
 REPORTS["교수자용.md"] = "\n".join(s)
+
+
+# ================================================================== 시대별
+E1, E3, E4, E5, E6 = (R[t]["전체"] for t in ("E1", "E3", "E4", "E5", "E6"))
+chn = E5.set_index("시대")["문항수"]
+big = [c for c in C.CHAPTERS if chn[c] >= 50]
+tops = E1[(E1["시대내순위"] == 1) & E1["시대"].isin(big)]
+t1 = tops.sort_values(["시대내비중", "시대"], ascending=[False, True]).iloc[0]
+lo_, hi_ = tops["시대내비중"].min(), tops["시대내비중"].max()
+short_n = {s_: int((R["E1"][s_]["표본"] == "표본 부족").sum()) for s_ in SUBS}
+e4 = E4.merge(E4.groupby("소주제")["문항수"].sum().rename("소주제문항수"), left_on="소주제", right_index=True)
+nb_ = E4.groupby("소주제")["묶음"].transform("count")
+e4 = e4[(e4["소주제문항수"] >= 10) & (nb_.loc[e4.index] >= 3)].sort_values(["소주제내비중", "소주제"], ascending=[False, True]).iloc[0]
+reg = E1[E1["출제회차수"] >= 8]
+fast = reg.sort_values(["간격중앙값", "문항수", "소주제"], ascending=[True, False, True]).iloc[0]
+old = E1[E1["문항수"] >= 8].sort_values(["미출제회차수", "소주제"], ascending=[False, True]).iloc[0]
+e6u = E6.sort_values(["변화_C_A", "소주제"], ascending=[False, True]).iloc[0]
+e6d = E6.sort_values(["변화_C_A", "소주제"], ascending=[True, True]).iloc[0]
+era_summary = [
+    f"시대 안에서 비중이 가장 큰 소주제는 {t1['시대']}의 '{t1['소주제명']}'{j2(t1['소주제명'])} 시대 문항의 {t1['시대내비중']:.1f}%를 차지한다. 문항 50개 이상인 {len(big)}개 시대에서 1위 소주제의 비중은 {lo_:.1f}~{hi_:.1f}%이다.",
+    f"출제 문항이 5개 미만인 소주제는 전체 기준 {short_n['전체']}개, 확인 기준 {short_n['확인']}개이다. 이 소주제들의 비중과 주기는 표에서 \"표본 부족\"으로 표시했다.",
+    f"문항 10개 이상이고 묶음이 3개 이상인 소주제 중 한 세분류 묶음에 가장 쏠린 곳은 '{e4['소주제명']}'의 '{e4['묶음']} {e4['묶음명']}'{j2(e4['묶음명'])}, {int(e4['소주제문항수'])}문항 중 {int(e4['문항수'])}문항({e4['소주제내비중']:.1f}%)이다.",
+    f"출제 회차 8개 이상인 소주제 {len(reg)}개 중 간격 중앙값이 가장 짧은 곳은 '{fast['소주제명']}'({fast['시대']})의 {fast['간격중앙값']:g}회이다. 문항 8개 이상인 소주제 중 가장 오래 나오지 않은 곳은 '{old['소주제명']}'{j2(old['소주제명'])} 마지막 출제가 {int(old['최근출제회차'])}회이다.",
+    f"47~59회 대비 70~79회에 회차당 문항이 가장 늘어난 소주제는 {e6u['시대']}의 '{e6u['소주제명']}'({e6u['변화_C_A']:+.2f}), 가장 줄어든 소주제는 {e6d['시대']}의 '{e6d['소주제명']}'({e6d['변화_C_A']:+.2f})이다.",
+]
+s = []
+s.append("# 한국사능력검정시험 심화 출제 경향 분석: 시대별·소주제별\n")
+s.append("## 핵심 요약\n")
+s.append("\n".join(f"{i}. {t}" for i, t in enumerate(era_summary, 1)) + "\n")
+s.append(f"> 확인 문항 {N_CONF}개는 선사~조선 시대에 {100*EARLY/N_CONF:.1f}%가 몰려 있어, 제5장 이후의 \"확인\" 표는 대부분 비어 있다.\n")
+s.append(SCOPE_NOTE)
+s.append("## 읽는 법\n")
+s.append("- 시대마다 소주제 표, 시대 요약(키워드 상위), 세분류 묶음 상위, 구간별 증감을 차례로 둔다. 각 표는 전체와 확인 기준으로 나눠 실었다.\n"
+         "- 시대내비중은 그 시대 문항 중 소주제가 차지하는 비율이다. 간격중앙값은 소주제가 출제된 서로 다른 회차 사이 간격의 중앙값(회차)이고, 미출제회차수는 79회에서 마지막 출제 회차를 뺀 값이다.\n"
+         "- 표본 부족은 문항이 5개 미만이라 비중·주기를 믿기 어렵다는 표시이다.\n"
+         "- 소주제마다 자료·정답·함정 키워드 상위 5개(`시대2_소주제카드_키워드_*.csv`)와 함께 오답으로 묶이는 소주제 상위 3개(`시대3_소주제카드_함정짝_*.csv`)는 CSV와 대시보드의 \"시대별\" 탭에서 볼 수 있다.\n"
+         "- 괄호 안 숫자는 그 키워드가 나온 문항 수이다.\n")
+EC = ["시대내순위", "소주제", "소주제명", "문항수", "시대내비중", "출제회차수", "최근출제회차", "간격중앙값", "미출제회차수", "주요유형", "표본"]
+for i, ch in enumerate(C.CHAPTERS, 1):
+    s.append(f"## {i}. {ch}\n")
+    nall, nconf = int(R["E5"]["전체"].set_index("시대").loc[ch, "문항수"]), int(R["E5"]["확인"].set_index("시대").loc[ch, "문항수"])
+    kall = int(R["E5"]["전체"].set_index("시대").loc[ch, "출제소주제수"])
+    sall = int(R["E5"]["전체"].set_index("시대").loc[ch, "분류표소주제수"])
+    s.append(f"전체 {nall}문항(소주제 {sall}개 중 {kall}개 출제), 확인 {nconf}문항.\n")
+    s.append("### 소주제별 비중과 주기\n")
+    s.append(two("E1", EC, filt=lambda d, ch=ch: d[(d["시대"] == ch) & (d["문항수"] > 0)]))
+    s.append("### 시대 요약 키워드\n")
+    s.append(two("E5", ["문항수", "소주제TOP5", "자료키워드TOP5", "정답키워드TOP5", "함정키워드TOP5", "주요유형TOP3"], filt=lambda d, ch=ch: d[d["시대"] == ch]))
+    s.append("### 세분류 묶음 상위 8개\n")
+    s.append(two("E4", ["소주제", "소주제명", "묶음", "묶음명", "문항수", "소주제내비중", "출제회차수", "최근출제회차"],
+                 filt=lambda d, ch=ch: d[(d["시대"] == ch) & (d["문항수"] > 0)].sort_values(["문항수", "소주제", "묶음"], ascending=[False, True, True]), n=8))
+    s.append("### 70~79회에 늘어난 소주제와 줄어든 소주제\n")
+    s.append("상위·하위 각 3개이며, 회차당 문항 수 기준이다(47~59회 13회, 60~69회 10회, 70~79회 10회).\n")
+
+    def chg(d, ch=ch):
+        d = d[(d["시대"] == ch) & (d["총문항수"] > 0)]
+        return pd.concat([d.head(3), d.tail(3)]).drop_duplicates("소주제")
+
+    s.append(two("E6", ["소주제", "소주제명", "47~59회_회차당", "60~69회_회차당", "70~79회_회차당", "변화_C_A", "z값"], filt=chg))
+REPORTS["시대별.md"] = "\n".join(s)
 
 for name, text in REPORTS.items():
     with open(os.path.join(OUT, name), "w", encoding="utf-8") as f:

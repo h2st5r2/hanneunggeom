@@ -594,6 +594,116 @@ def t_P6b(qs):
                               문장중비율=100 * len(multi) / len(d))])
 
 
+# ---------------------------------------------------------------- 시대별·소주제별
+
+def _sub_chapter(code):
+    return TOPIC_CH[SUB_TOPIC[code]]
+
+
+def t_E1(qs):
+    """시대 안 소주제 비중·출제 주기·주요 유형."""
+    by = defaultdict(list)
+    for x in qs:
+        by[x["code"]].append(x)
+    ch_total = Counter(chapter_of(x) for x in qs)
+    rows = []
+    for code, name in SUB_NAME.items():
+        xs = by.get(code, [])
+        ch = _sub_chapter(code)
+        rs = sorted({x["r"] for x in xs})
+        gaps = [b - a for a, b in zip(rs, rs[1:])]
+        tc = sorted(Counter(x["type"] for x in xs).items(), key=lambda kv: (-kv[1], kv[0]))
+        rows.append(dict(시대=ch, 소주제=code, 소주제명=name, 문항수=len(xs),
+                         시대내비중=(100 * len(xs) / ch_total[ch]) if ch_total[ch] else None,
+                         출제회차수=len(rs), 최근출제회차=rs[-1] if rs else None,
+                         간격중앙값=statistics.median(gaps) if gaps else None,
+                         미출제회차수=(LAST - rs[-1]) if rs else None,
+                         주요유형=tc[0][0] if tc else None, 주요유형문항수=tc[0][1] if tc else None,
+                         표본="표본 부족" if len(xs) < 5 else ""))
+    df = pd.DataFrame(rows)
+    df["_c"] = df["시대"].map(CH_RANK)
+    df["_l"] = df["최근출제회차"].fillna(-1)
+    df = df.sort_values(["_c", "문항수", "_l", "소주제"], ascending=[True, False, False, True]).drop(columns=["_c", "_l"])
+    df.insert(2, "시대내순위", df.groupby("시대").cumcount() + 1)
+    return df.reset_index(drop=True)
+
+
+def t_E2(qs):
+    """소주제 카드: 자료·정답·함정 키워드 상위 5개."""
+    kinds = {"자료키워드": defaultdict(Counter), "정답키워드": defaultdict(Counter), "함정키워드": defaultdict(Counter)}
+    for x in qs:
+        for k in split_kw(x["kw"]):
+            kinds["자료키워드"][x["code"]][k] += 1
+        a = ans_choice(x)
+        if a:
+            for k in split_kw(a["k"]):
+                kinds["정답키워드"][x["code"]][k] += 1
+        for k in {t for c in x["ch"] if c["role"] == "오답" for t in split_kw(c["k"])}:
+            kinds["함정키워드"][x["code"]][k] += 1
+    rows = []
+    for kind, d in kinds.items():
+        for code, cnt in d.items():
+            for i, (k, n) in enumerate(sorted(cnt.items(), key=lambda kv: (-kv[1], kv[0]))[:5], 1):
+                rows.append(dict(시대=_sub_chapter(code), 소주제=code, 소주제명=SUB_NAME[code], 구분=kind, 순위=i, 키워드=k, 문항수=n))
+    df = pd.DataFrame(rows)
+    df["_c"] = df["시대"].map(CH_RANK)
+    df["_k"] = df["구분"].map({"자료키워드": 0, "정답키워드": 1, "함정키워드": 2})
+    return df.sort_values(["_c", "소주제", "_k", "순위"]).drop(columns=["_c", "_k"]).reset_index(drop=True)
+
+
+def t_E3(qs):
+    """정답 소주제별 함께 오답으로 묶이는 소주제 상위 3개."""
+    df = t_L4b(qs)
+    df = df.sort_values(["정답소주제", "문항수", "오답소주제"], ascending=[True, False, True])
+    df["순위"] = df.groupby("정답소주제").cumcount() + 1
+    df = df[df["순위"] <= 3].copy()
+    df.insert(0, "시대", df["정답소주제"].map(_sub_chapter))
+    df["_c"] = df["시대"].map(CH_RANK)
+    df = df.sort_values(["_c", "정답소주제", "순위"]).drop(columns="_c")
+    return df[["시대", "정답소주제", "정답소주제명", "순위", "오답소주제", "오답소주제명", "문항수", "정답소주제문항수", "같은대주제"]].reset_index(drop=True)
+
+
+def t_E4(qs):
+    """세분류 묶음별 출제 수와 소주제 안 비중."""
+    df = t_P3a(qs)
+    tot = df.groupby("소주제")["문항수"].transform("sum")
+    df["소주제내비중"] = (100 * df["문항수"] / tot).where(tot > 0)
+    df.insert(0, "시대", df["소주제"].map(_sub_chapter))
+    return df[["시대", "소주제", "소주제명", "묶음", "묶음명", "문항수", "소주제내비중", "출제회차수", "최근출제회차"]].reset_index(drop=True)
+
+
+def _top(counter, n=5):
+    return "; ".join(f"{k}({v})" for k, v in sorted(counter.items(), key=lambda kv: (-kv[1], kv[0]))[:n])
+
+
+def t_E5(qs):
+    rows = []
+    for ch in CHAPTERS:
+        xs = [x for x in qs if chapter_of(x) == ch]
+        sub, kw, ak, tr, ty = Counter(), Counter(), Counter(), Counter(), Counter()
+        for x in xs:
+            sub[SUB_NAME[x["code"]]] += 1
+            ty[x["type"]] += 1
+            kw.update(split_kw(x["kw"]))
+            a = ans_choice(x)
+            if a:
+                ak.update(split_kw(a["k"]))
+            tr.update({t for c in x["ch"] if c["role"] == "오답" for t in split_kw(c["k"])})
+        subs = [s["code"] for t in TAX["topics"] if t["chapter"] == ch for s in t["subs"]]
+        rows.append(dict(시대=ch, 문항수=len(xs), 출제소주제수=len({x["code"] for x in xs}), 분류표소주제수=len(subs),
+                         소주제TOP5=_top(sub), 자료키워드TOP5=_top(kw), 정답키워드TOP5=_top(ak),
+                         함정키워드TOP5=_top(tr), 주요유형TOP3=_top(ty, 3)))
+    return pd.DataFrame(rows)
+
+
+def t_E6(qs):
+    df = t_P5a(qs)
+    df.insert(2, "시대", df["소주제"].map(_sub_chapter))
+    df["_c"] = df["시대"].map(CH_RANK)
+    df = df.sort_values(["_c", "변화_C_A", "소주제"], ascending=[True, False, True]).drop(columns="_c")
+    return df.reset_index(drop=True)
+
+
 # (id, 파일명, 제목, 함수)
 TABLES = [
     ("L1a", "학습1_대주제별_출제비중", t_L1a), ("L1b", "학습1_시대별_출제비중", t_L1b),
@@ -614,6 +724,9 @@ TABLES = [
     ("P5a", "교수5_구간별_소주제", t_P5a), ("P5b", "교수5_구간별_유형", t_P5b),
     ("P5c", "교수5_구간별_시대", t_P5c),
     ("P6", "교수6_재출제_선지문장", t_P6), ("P6b", "교수6_재출제_요약", t_P6b),
+    ("E1", "시대1_소주제_비중과주기", t_E1), ("E2", "시대2_소주제카드_키워드", t_E2),
+    ("E3", "시대3_소주제카드_함정짝", t_E3), ("E4", "시대4_세분류_비중", t_E4),
+    ("E5", "시대5_시대요약", t_E5), ("E6", "시대6_소주제_구간변화", t_E6),
 ]
 
 

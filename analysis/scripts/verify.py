@@ -327,6 +327,78 @@ for sub, d in SUB.items():
        (total, len(occ), len(multi), sum(len(v) for v in multi.values())), f"P6b/{sub}")
     ok(abs(num(s6.선지중비율) - 100 * sum(len(v) for v in multi.values()) / total) < 1e-3, f"P6b/{sub}: 선지중비율")
 
+    # ---- 시대별(E1~E6)
+    sub_ch = {s_["code"]: chap[t["key"]] for t in TAX["topics"] for s_ in t["subs"]}
+    chtot = d.chapter.value_counts()
+    rows = []
+    for code in subname:
+        xs = d[d.code == code]
+        rs = sorted(xs.r.unique())
+        ty = xs.groupby("type").size().reset_index(name="n").sort_values(["n", "type"], ascending=[False, True])
+        rows.append(dict(소주제=code, 문항수=len(xs), 시대내비중=100 * len(xs) / chtot[sub_ch[code]] if chtot.get(sub_ch[code], 0) else np.nan,
+                         출제회차수=len(rs), 최근출제회차=rs[-1] if rs else np.nan,
+                         간격중앙값=float(np.median(np.diff(rs))) if len(rs) > 1 else np.nan,
+                         미출제회차수=79 - rs[-1] if rs else np.nan,
+                         주요유형=ty.iloc[0]["type"] if len(ty) else "", 주요유형문항수=ty.iloc[0]["n"] if len(ty) else np.nan,
+                         표본="표본 부족" if len(xs) < 5 else ""))
+    e = pd.DataFrame(rows)
+    e["_c"] = e.소주제.map(lambda k: chapters.index(sub_ch[k]))
+    e["_l"] = e.최근출제회차.fillna(-1)
+    e = e.sort_values(["_c", "문항수", "_l", "소주제"], ascending=[True, False, False, True])
+    e["시대내순위"] = e.groupby("_c").cumcount() + 1
+    compare("시대1_소주제_비중과주기", sub, e.drop(columns=["_c", "_l"]), ["소주제"])
+    # E2
+    kinds = {"자료키워드": {}, "정답키워드": {}, "함정키워드": {}}
+    for _, r in d.iterrows():
+        for t in toks(r.kw):
+            kinds["자료키워드"].setdefault(r.code, {}).setdefault(t, 0)
+            kinds["자료키워드"][r.code][t] += 1
+        a = f_ans(r.id)
+        if a:
+            for t in toks(a["k"]):
+                kinds["정답키워드"].setdefault(r.code, {}).setdefault(t, 0)
+                kinds["정답키워드"][r.code][t] += 1
+        for t in {t for c in chs[r.id] if c["role"] == "오답" for t in toks(c["k"])}:
+            kinds["함정키워드"].setdefault(r.code, {}).setdefault(t, 0)
+            kinds["함정키워드"][r.code][t] += 1
+    rows = []
+    for kind, dd in kinds.items():
+        for code, cnt in dd.items():
+            for i, (t, n_) in enumerate(sorted(cnt.items(), key=lambda kv: (-kv[1], kv[0]))[:5], 1):
+                rows.append(dict(소주제=code, 구분=kind, 순위=i, 키워드=t, 문항수=n_))
+    compare("시대2_소주제카드_키워드", sub, pd.DataFrame(rows), ["소주제", "구분", "순위"])
+    # E3
+    pe = pd.DataFrame(pr, columns=["정답소주제", "오답소주제"]).value_counts().reset_index(name="문항수")
+    pe = pe.sort_values(["정답소주제", "문항수", "오답소주제"], ascending=[True, False, True])
+    pe["순위"] = pe.groupby("정답소주제").cumcount() + 1
+    pe = pe[pe.순위 <= 3].copy()
+    pe["정답소주제문항수"] = pe.정답소주제.map(anscnt)
+    compare("시대3_소주제카드_함정짝", sub, pe, ["정답소주제", "오답소주제"])
+    # E4
+    cb2 = d[d.blk != ""].groupby(["code", "blk"]).size()
+    rows = []
+    for code, items in TAX["abc"].items():
+        tot_ = sum(int(cb2.get((code, it["l"]), 0)) for it in items)
+        for it in items:
+            n_ = int(cb2.get((code, it["l"]), 0))
+            rows.append(dict(소주제=code, 묶음=it["l"], 문항수=n_, 소주제내비중=100 * n_ / tot_ if tot_ else np.nan))
+    compare("시대4_세분류_비중", sub, pd.DataFrame(rows), ["소주제", "묶음"])
+    # E5
+    rows = []
+    for ch in chapters:
+        xs = d[d.chapter == ch]
+        nm = xs.code.map(subname).value_counts()
+        top = sorted(nm.items(), key=lambda kv: (-kv[1], kv[0]))[:5]
+        rows.append(dict(시대=ch, 문항수=len(xs), 출제소주제수=xs.code.nunique(), 소주제TOP5="; ".join(f"{k}({v})" for k, v in top)))
+    compare("시대5_시대요약", sub, pd.DataFrame(rows), ["시대"])
+    # E6
+    e6 = pd.DataFrame({"소주제": list(subname)})
+    e6["47~59회_회차당"] = e6.소주제.map(lambda k: (A.code == k).sum() / 13)
+    e6["70~79회_회차당"] = e6.소주제.map(lambda k: (Cc.code == k).sum() / 10)
+    e6["변화_C_A"] = e6["70~79회_회차당"] - e6["47~59회_회차당"]
+    e6["시대"] = e6.소주제.map(sub_ch)
+    compare("시대6_소주제_구간변화", sub, e6, ["소주제"])
+
 # ---------------------------------------------------------------- B. 마크다운 표 ↔ CSV
 SHORT = {"선사": "제1장 선사 문화", "고대": "제2장 한국 고대사", "고려": "제3장 고려시대사", "조선": "제4장 조선시대사",
          "근대": "제5장 한국 근대사", "일제": "제6장 일제 강점기", "현대": "제7장 한국 현대사", "복합": "제8장 복합 문항", "부록": "특별 부록"}
@@ -417,7 +489,7 @@ def merged_match(head, body):
 
 DERIVED_HEADS = ({"구간", "평균(전체)"}, {"기준", "묶음수"}, {"소주제", "미출제 묶음"})
 md_tables_checked = 0
-for rep in ("학습자용.md", "교수자용.md"):
+for rep in ("학습자용.md", "교수자용.md", "시대별.md"):
     for label, head, body, ln in parse_md(os.path.join(AN, rep)):
         md_tables_checked += 1
         if any(s <= set(head) for s in DERIVED_HEADS):
@@ -472,6 +544,8 @@ tmap = {  # 대시보드 표 id -> CSV 이름 접두
     "P3d": "교수3_소주제_미출제기간", "P4a": "교수4_유형분포", "P4b": "교수4_유형x시대", "P4c": "교수4_번호대별_부정형세트",
     "P4d": "교수4_번호별_부정형세트", "P5a": "교수5_구간별_소주제", "P5b": "교수5_구간별_유형", "P5c": "교수5_구간별_시대",
     "P6": "교수6_재출제_선지문장", "P6b": "교수6_재출제_요약",
+    "E1": "시대1_소주제_비중과주기", "E2": "시대2_소주제카드_키워드", "E3": "시대3_소주제카드_함정짝",
+    "E4": "시대4_세분류_비중", "E5": "시대5_시대요약", "E6": "시대6_소주제_구간변화",
 }
 for tid, name in tmap.items():
     for sub in ("전체", "확인"):
@@ -571,6 +645,39 @@ kd = sorted(chg, key=lambda k: (chg[k], k))
 ok(f"'{subname[ks[0]]}'({chg[ks[0]]:+.2f})" in P[4] and f"'{subname[kd[0]]}'({chg[kd[0]]:+.2f})" in P[4], "P요약5 증감")
 s6 = csvof("교수6_재출제_요약", "전체").iloc[0]
 ok(f"{int(s6.둘이상회차에등장한문장수):,}문장" in P[4] and f"{float(s6.선지중비율):.1f}%" in P[4], "P요약5 재출제")
+
+# 시대별 요약 5줄
+EL = summary_lines(os.path.join(AN, "시대별.md"))
+ok(len(EL) == 5, "시대별 요약이 5줄이 아님")
+e1 = csvof("시대1_소주제_비중과주기", "전체").copy()
+for c_ in ("문항수", "시대내순위"):
+    e1[c_] = e1[c_].astype(int)
+e1["비중"] = e1["시대내비중"].map(num)
+chn = d.chapter.value_counts()
+bigc = [c for c in chapters if chn.get(c, 0) >= 50]
+tp = e1[(e1.시대내순위 == 1) & e1.시대.isin(bigc)]
+t1 = tp.sort_values(["비중", "시대"], ascending=[False, True]).iloc[0]
+ok(t1.시대 in EL[0] and f"'{t1.소주제명}'" in EL[0] and f"{t1.비중:.1f}%" in EL[0] and f"{len(bigc)}개 시대" in EL[0] and f"{tp.비중.min():.1f}~{tp.비중.max():.1f}%" in EL[0], "시대별 요약1")
+ok(f"전체 기준 {(e1.문항수 < 5).sum()}개" in EL[1] and f"확인 기준 {(csvof('시대1_소주제_비중과주기', '확인').문항수.astype(int) < 5).sum()}개" in EL[1], "시대별 요약2")
+e4 = csvof("시대4_세분류_비중", "전체").copy()
+e4["n"] = e4.문항수.astype(int)
+e4["tot"] = e4.groupby("소주제").n.transform("sum")
+e4["cnt"] = e4.groupby("소주제").n.transform("size")
+e4["sh"] = e4.소주제내비중.map(num)
+c4 = e4[(e4.tot >= 10) & (e4.cnt >= 3)].sort_values(["sh", "소주제"], ascending=[False, True]).iloc[0]
+ok(f"'{c4.소주제명}'의 '{c4.묶음} {c4.묶음명}'" in EL[2] and f"{c4.tot}문항 중 {c4.n}문항({c4.sh:.1f}%)" in EL[2], "시대별 요약3")
+e1["회"] = e1.출제회차수.astype(int)
+e1["g"] = e1.간격중앙값.map(num)
+rg = e1[e1.회 >= 8]
+fa = rg.sort_values(["g", "문항수", "소주제"], ascending=[True, False, True]).iloc[0]
+e1["m"] = e1.미출제회차수.map(num)
+od = e1[e1.문항수 >= 8].sort_values(["m", "소주제"], ascending=[False, True]).iloc[0]
+ok(f"{len(rg)}개 중" in EL[3] and f"'{fa.소주제명}'({fa.시대})의 {fa.g:g}회" in EL[3] and f"'{od.소주제명}'" in EL[3] and f"마지막 출제가 {int(num(od.최근출제회차))}회" in EL[3], "시대별 요약4")
+e6 = csvof("시대6_소주제_구간변화", "전체").copy()
+e6["c"] = e6.변화_C_A.map(num)
+u = e6.sort_values(["c", "소주제"], ascending=[False, True]).iloc[0]
+dn = e6.sort_values(["c", "소주제"], ascending=[True, True]).iloc[0]
+ok(f"{u.시대}의 '{u.소주제명}'({u.c:+.2f})" in EL[4] and f"{dn.시대}의 '{dn.소주제명}'({dn.c:+.2f})" in EL[4], "시대별 요약5")
 
 # ---------------------------------------------------------------- 결과
 out = [f"검증 항목 {passes + len(fails)}개 중 통과 {passes}개, 실패 {len(fails)}개 (마크다운 표 {md_tables_checked}개 대조)"] + log

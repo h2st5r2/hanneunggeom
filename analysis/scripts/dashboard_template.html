@@ -66,6 +66,7 @@ select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6
     <div class="seg" role="group" aria-label="보고서 선택" id="tabs">
       <button data-tab="learner" aria-pressed="true">학습자용</button>
       <button data-tab="prof" aria-pressed="false">교수자용</button>
+      <button data-tab="era" aria-pressed="false">시대별</button>
     </div>
     <div class="seg" role="group" aria-label="집계 기준" id="subs">
       <button data-sub="전체" aria-pressed="true">전체</button>
@@ -80,7 +81,7 @@ select{font:inherit;padding:6px 8px;border:1px solid var(--line);border-radius:6
 "use strict";
 const D = JSON.parse(document.getElementById("DATA").textContent);
 const M = D._meta;
-const state = { tab: "learner", sub: "전체", l3: null };
+const state = { tab: "learner", sub: "전체", l3: null, ch: null, es: null };
 const T = id => D[id][state.sub];
 const esc = s => String(s == null ? "" : s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 const f1 = v => v == null ? "-" : Number(v).toFixed(1);
@@ -169,7 +170,7 @@ function rangeChart(rows, o) {
 }
 function diverging(rows, o) {
   const W = 700, lw = 230, rw = 60, bh = 14, gap = 9, h = rows.length * (bh + gap) + 6;
-  const pw = W - lw - rw, max = Math.max(1e-9, ...rows.map(r => Math.abs(o.value(r)))), c0 = lw + pw / 2;
+  const pw = W - lw - rw, max = Math.max(1e-9, ...rows.map(r => Math.abs(o.value(r)))) * 1.25, c0 = lw + pw / 2;
   let s = `<svg class="chart" viewBox="0 0 ${W} ${h}" role="img" aria-label="${esc(o.aria)}"><line class="ax" x1="${c0}" x2="${c0}" y1="0" y2="${h}"/>`;
   rows.forEach((r, i) => {
     const y = 4 + i * (bh + gap), v = o.value(r), w = Math.abs(v) / max * (pw / 2), pos = v >= 0;
@@ -358,13 +359,55 @@ function prof() {
   return out.join("");
 }
 
+/* ---------- 시대별 ---------- */
+function era() {
+  const out = [];
+  if (!state.ch) state.ch = M.chapters[3];
+  const e1all = T("E1").filter(r => r.시대 === state.ch), e1 = e1all.filter(r => r.문항수 > 0);
+  const sel = `<label>시대 <select id="chsel">${M.chapters.map(c => `<option ${c === state.ch ? "selected" : ""}>${esc(c)}</option>`).join("")}</select></label>`;
+  const s5 = T("E5").find(r => r.시대 === state.ch);
+  out.push(card("시대 선택", "시대를 고르면 소주제별 비중, 키워드, 세분류, 구간 변화를 보여 준다.", sel +
+    `<div class="cards" style="margin-top:12px"><div class="stat"><b>${s5.문항수}</b><span>문항 수</span></div><div class="stat"><b>${s5.출제소주제수}/${s5.분류표소주제수}</b><span>출제된 소주제/분류표 소주제</span></div></div>` +
+    tbl([{ k: "소주제 TOP5", v: s5.소주제TOP5 }, { k: "자료 키워드 TOP5", v: s5.자료키워드TOP5 }, { k: "정답 키워드 TOP5", v: s5.정답키워드TOP5 }, { k: "함정 키워드 TOP5", v: s5.함정키워드TOP5 }, { k: "주요 유형 TOP3", v: s5.주요유형TOP3 }],
+      [{ n: "구분", l: 1, k: "k" }, { n: "상위 항목(괄호는 문항 수)", l: 1, k: "v" }])));
+  out.push(card("소주제별 비중과 주기", "시대 문항 중 소주제 비중. 간격 중앙값은 출제 회차 사이 간격의 중앙값이다. 문항 5개 미만은 표본 부족.",
+    (e1.length ? hbar(e1, { aria: "시대 안 소주제 비중", lw: 230, rw: 130, label: r => r.소주제명, value: r => r.시대내비중, fmt: r => `${r.문항수}문항 (${f1(r.시대내비중)}%)`,
+      tip: r => `${r.소주제} ${r.소주제명}\n${r.문항수}문항 · ${r.출제회차수}개 회차 · 최근 ${r.최근출제회차}회\n간격 중앙값 ${r.간격중앙값 == null ? "-" : r.간격중앙값} · 주요 유형 ${r.주요유형}${r.표본 ? "\n" + r.표본 : ""}` }) : "<p class='d'>이 기준에서는 해당 문항이 없다.</p>") +
+    (e1.length ? tbl(e1, [{ n: "소주제", l: 1, f: r => `${r.소주제} ${r.소주제명}` }, { n: "문항수", k: "문항수" }, { n: "비중(%)", f: r => f1(r.시대내비중) }, { n: "출제 회차", k: "출제회차수" }, { n: "최근", k: "최근출제회차" }, { n: "간격 중앙값", k: "간격중앙값" }, { n: "미출제 회차", k: "미출제회차수" }, { n: "주요 유형", l: 1, k: "주요유형" }, { n: "표본", l: 1, k: "표본" }], { maxh: 360 }) : "")));
+  const codes = e1.map(r => r.소주제);
+  if (!codes.includes(state.es)) state.es = codes[0] || null;
+  let cardBody = "<p class='d'>이 기준에서는 해당 소주제가 없다.</p>";
+  if (state.es) {
+    const kw = k => T("E2").filter(r => r.소주제 === state.es && r.구분 === k);
+    const kt = (k, title) => `<div><h3>${title}</h3>${tbl(kw(k), [{ n: "#", k: "순위" }, { n: "키워드", l: 1, k: "키워드" }, { n: "문항", k: "문항수" }])}</div>`;
+    const tr = T("E3").filter(r => r.정답소주제 === state.es);
+    const bl = T("E4").filter(r => r.소주제 === state.es);
+    cardBody = `<label>소주제 <select id="essel">${e1.map(r => `<option value="${r.소주제}" ${r.소주제 === state.es ? "selected" : ""}>${esc(r.소주제 + " " + r.소주제명)}</option>`).join("")}</select></label>` +
+      `<div class="two" style="margin-top:8px">${kt("자료키워드", "자료 키워드")}${kt("정답키워드", "정답 키워드")}</div>${kt("함정키워드", "함정(오답) 키워드")}` +
+      "<h3>정답일 때 함께 오답으로 나온 소주제</h3>" + tbl(tr, [{ n: "#", k: "순위" }, { n: "오답 소주제", l: 1, f: r => `${r.오답소주제} ${r.오답소주제명}` }, { n: "문항", k: "문항수" }, { n: "정답 소주제 문항", k: "정답소주제문항수" }]) +
+      "<h3>세분류 묶음</h3>" + (bl.length ? hbar(bl, { aria: "세분류 묶음 문항 수", lw: 230, label: r => `${r.묶음} ${r.묶음명}`, value: r => r.문항수, max: Math.max(1, ...bl.map(r => r.문항수)), fmt: r => `${r.문항수}문항`, tip: r => `${r.묶음} ${r.묶음명}\n${r.문항수}문항 · 최근 ${r.최근출제회차 == null ? "-" : r.최근출제회차 + "회"}` }) : "<p class='d'>이 소주제에는 세분류가 없다.</p>");
+  }
+  out.push(card("소주제 카드", "소주제를 고르면 키워드, 함께 오답으로 묶이는 소주제, 세분류 묶음을 보여 준다.", cardBody));
+  const ch6 = T("E6").filter(r => r.시대 === state.ch && r.총문항수 > 0);
+  const pick = [...ch6.slice(0, 3), ...ch6.slice(Math.max(3, ch6.length - 3))];
+  out.push(card("70~79회에 늘어난·줄어든 소주제", "회차당 문항 수 변화(70~79회 − 47~59회). 위 3개는 늘어난 소주제, 아래 3개는 줄어든 소주제.",
+    pick.length ? diverging(pick, { aria: "소주제별 변화", value: r => r.변화_C_A, label: r => r.소주제명,
+      tip: r => `${r.소주제} ${r.소주제명}\n47~59회 ${f2(r["47~59회_회차당"])} → 60~69회 ${f2(r["60~69회_회차당"])} → 70~79회 ${f2(r["70~79회_회차당"])}\nz ${r.z값 == null ? "-" : f2(r.z값)}` }) : "<p class='d'>해당 없음</p>"));
+  return out.join("");
+}
+function bindEra() {
+  const a = document.getElementById("chsel"); if (a) a.onchange = () => { state.ch = a.value; state.es = null; render(); };
+  const b = document.getElementById("essel"); if (b) b.onchange = () => { state.es = b.value; render(); };
+}
+
 /* ---------- 렌더 ---------- */
 function render() {
   const nConf = M.nConf;
   const warn = state.sub === "확인"
     ? `<div class="note"><b>확인 문항만 보는 중:</b> 확인 ${nConf}문항은 선사~조선 시대에 ${M.confEarlyPct}%가 몰려 있어 근대·일제·현대 항목이 거의 비어 있다. 시험 전체의 경향은 "전체"로 본다.</div>` : "";
-  document.getElementById("app").innerHTML = warn + (state.tab === "learner" ? learner() : prof());
+  document.getElementById("app").innerHTML = warn + (state.tab === "learner" ? learner() : state.tab === "prof" ? prof() : era());
   if (state.tab === "learner") bindL3();
+  if (state.tab === "era") bindEra();
 }
 document.getElementById("tabs").onclick = e => { const b = e.target.closest("button"); if (!b) return; state.tab = b.dataset.tab; syncBtns(); render(); };
 document.getElementById("subs").onclick = e => { const b = e.target.closest("button"); if (!b) return; state.sub = b.dataset.sub; syncBtns(); render(); };
