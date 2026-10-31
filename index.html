@@ -22,11 +22,30 @@ input[type=number]{width:80px}
 button{font:inherit;padding:8px 14px;border-radius:8px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}
 button.primary{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:600}
 button:disabled{opacity:.5;cursor:default}
-.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px}
-.tree{max-height:420px;overflow:auto;border:1px solid var(--line);border-radius:8px;padding:8px 12px}
-.chap{margin:6px 0 2px;font-weight:700}
-.topic{margin:2px 0 2px 14px}
-.subs{margin-left:34px;display:flex;flex-wrap:wrap;gap:0 16px}
+.tools{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:10px;align-items:center}
+.tools button{padding:6px 12px;font-size:.9rem}
+.sep{width:1px;height:22px;background:var(--line);margin:0 4px}
+.selinfo{margin:0 0 8px;padding:8px 12px;border-radius:8px;background:var(--bg);font-size:.92rem}
+.tree{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+.chap{border-bottom:1px solid var(--line)}
+.chap:last-child{border-bottom:0}
+.chap>summary{display:flex;align-items:center;gap:10px;padding:10px 12px;cursor:pointer;list-style:none;user-select:none}
+.chap>summary::-webkit-details-marker{display:none}
+.chap>summary::before{content:"▸";color:var(--sub);transition:transform .15s}
+.chap[open]>summary::before{transform:rotate(90deg)}
+.chap[open]>summary{background:var(--bg)}
+.ct{font-weight:700;flex:1}
+.cstat{color:var(--sub);font-size:.82rem}
+.cstat.on{color:var(--accent);font-weight:600}
+.topics{padding:4px 12px 10px 38px;display:grid;gap:8px}
+.topic{padding-top:6px}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:5px 0 0 22px}
+.chip{position:relative;cursor:pointer}
+.chip input{position:absolute;opacity:0;width:0;height:0}
+.chip span{display:inline-block;padding:3px 11px;border:1px solid var(--line);border-radius:999px;font-size:.85rem;color:var(--sub)}
+.chip span i{font-style:normal;font-size:.78rem;opacity:.75}
+.chip input:checked+span{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+.chip input:focus-visible+span{outline:2px solid var(--accent);outline-offset:2px}
 .cnt{color:var(--sub);font-size:.82rem}
 #msg{color:#c0392b;font-size:.9rem;min-height:1.2em}
 .tabs{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
@@ -77,11 +96,19 @@ button:disabled{opacity:.5;cursor:default}
 <main>
   <section class="card" id="controls">
     <h2>1. 범위 고르기</h2>
-    <div class="tools">
+    <input type="text" id="search" placeholder="검색: 예) 임진왜란, 고려, 3·1 운동" size="34" aria-label="범위 검색">
+    <span class="hint" id="searchInfo"></span>
+    <div class="tools" style="margin-top:8px">
+      <button data-preset="ancient">선사·고대</button>
+      <button data-preset="goryeo">고려</button>
+      <button data-preset="joseon">조선</button>
+      <button data-preset="modern">근현대</button>
+      <span class="sep"></span>
       <button id="allOn">전체 선택</button>
       <button id="allOff">전체 해제</button>
-      <button id="foldAll">모두 접기/펼치기</button>
+      <button id="foldAll">모두 펼치기</button>
     </div>
+    <p class="selinfo" id="selInfo"></p>
     <div class="tree" id="tree">데이터를 불러오는 중입니다…</div>
     <p class="hint" id="poolInfo"></p>
 
@@ -120,7 +147,7 @@ button:disabled{opacity:.5;cursor:default}
 'use strict';
 var CIRCLED=['①','②','③','④','⑤'];
 var LS_KEY='hanneunggeom.lastExam';
-var Q=[], TAX=null, ORDER={}, current=null;
+var Q=[], TAX=null, CHAPS=[], ORDER={}, current=null;
 var $=function(id){return document.getElementById(id)};
 
 function esc(s){return String(s==null?'':s).replace(/[&<>"]/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]})}
@@ -141,7 +168,6 @@ function init(){
   Q.forEach(function(q){ if(!(q.code in ORDER)) ORDER[q.code]=9999; });
   buildTree();
   $('make').disabled=false; $('mock').disabled=false;
-  updatePool();
 }
 
 /* ---------- 범위 트리 ---------- */
@@ -149,40 +175,65 @@ function countBy(key){var m={};Q.forEach(function(q){m[q[key]]=(m[q[key]]||0)+1}
 
 function buildTree(){
   var byTopic=countBy('topic'), byCode=countBy('code');
-  var html='', lastChap=null;
+  CHAPS=[];
   TAX.topics.forEach(function(t){
-    if(t.chapter!==lastChap){
-      html+='<div class="chap">'+esc(t.chapter)+'</div>'; lastChap=t.chapter;
-    }
-    html+='<div class="topic"><label class="chk"><input type="checkbox" class="tp" data-topic="'+esc(t.key)+'" checked> '+
-      esc(t.name)+' <span class="cnt">('+(byTopic[t.key]||0)+')</span></label>';
-    if(t.subs.length>1){
-      html+='<div class="subs">'+t.subs.map(function(s){
-        return '<label class="chk"><input type="checkbox" class="sb" data-topic="'+esc(t.key)+'" data-code="'+esc(s.code)+'" checked> '+
-          esc(s.name)+' <span class="cnt">('+(byCode[s.code]||0)+')</span></label>';
-      }).join('')+'</div>';
-    } else {
-      html+='<input type="checkbox" class="sb" data-topic="'+esc(t.key)+'" data-code="'+esc(t.subs[0].code)+'" checked hidden>';
-    }
-    html+='</div>';
+    var c=CHAPS[CHAPS.length-1];
+    if(!c||c.name!==t.chapter){c={name:t.chapter,topics:[]};CHAPS.push(c)}
+    c.topics.push(t);
+  });
+  var html='';
+  CHAPS.forEach(function(c,ci){
+    var total=0; c.topics.forEach(function(t){total+=byTopic[t.key]||0});
+    html+='<details class="chap" data-chap="'+ci+'"><summary><input type="checkbox" class="cp" data-chap="'+ci+'" checked aria-label="'+esc(c.name)+' 전체">'+
+      '<span class="ct">'+esc(c.name)+'</span><span class="cstat" data-total="'+total+'"></span></summary><div class="topics">';
+    c.topics.forEach(function(t){
+      var text=(c.name+' '+t.name+' '+t.subs.map(function(s){return s.name}).join(' ')).toLowerCase();
+      html+='<div class="topic" data-text="'+esc(text)+'" data-own="'+esc((c.name+' '+t.name).toLowerCase())+'">'+
+        '<label class="chk"><input type="checkbox" class="tp" data-topic="'+esc(t.key)+'" data-chap="'+ci+'" checked> <b>'+esc(t.name)+'</b> <span class="cnt">('+(byTopic[t.key]||0)+')</span></label>';
+      if(t.subs.length>1){
+        html+='<div class="chips">'+t.subs.map(function(s){
+          return '<label class="chip" data-text="'+esc((s.name||'').toLowerCase())+'"><input type="checkbox" class="sb" data-topic="'+esc(t.key)+'" data-chap="'+ci+'" data-code="'+esc(s.code)+'" checked>'+
+            '<span>'+esc(s.name||'(이름 없음)')+' <i>'+(byCode[s.code]||0)+'</i></span></label>';
+        }).join('')+'</div>';
+      } else {
+        html+='<input type="checkbox" class="sb" data-topic="'+esc(t.key)+'" data-chap="'+ci+'" data-code="'+esc(t.subs[0].code)+'" checked hidden>';
+      }
+      html+='</div>';
+    });
+    html+='</div></details>';
   });
   $('tree').innerHTML=html;
   $('tree').addEventListener('change',function(e){
-    var el=e.target;
-    if(el.classList.contains('tp')){
-      document.querySelectorAll('.sb[data-topic="'+el.dataset.topic+'"]').forEach(function(b){b.checked=el.checked});
-    }
-    syncTopics(); updatePool();
+    var el=e.target, sel=null;
+    if(el.classList.contains('tp')) sel='.sb[data-topic="'+el.dataset.topic+'"]';
+    else if(el.classList.contains('cp')) sel='.sb[data-chap="'+el.dataset.chap+'"]';
+    if(sel) document.querySelectorAll(sel).forEach(function(b){b.checked=el.checked});
+    syncAll();
   });
-  syncTopics();
+  syncAll();
 }
 
-function syncTopics(){
+/* 장·대주제 체크 상태와 선택 개수를 소주제 체크에 맞춘다 */
+function syncAll(){
+  function state(list){var on=0;list.forEach(function(b){if(b.checked)on++});return {on:on,all:list.length}}
   document.querySelectorAll('.tp').forEach(function(tp){
-    var subs=document.querySelectorAll('.sb[data-topic="'+tp.dataset.topic+'"]');
-    var on=0; subs.forEach(function(b){if(b.checked)on++});
-    tp.checked=on===subs.length; tp.indeterminate=on>0&&on<subs.length;
+    var s=state(document.querySelectorAll('.sb[data-topic="'+tp.dataset.topic+'"]'));
+    tp.checked=s.on===s.all; tp.indeterminate=s.on>0&&s.on<s.all;
   });
+  var byCode=countBy('code'), codes=selectedCodes(), selTotal=0, nTopic=0, nSub=0;
+  document.querySelectorAll('.cp').forEach(function(cp){
+    var subs=document.querySelectorAll('.sb[data-chap="'+cp.dataset.chap+'"]');
+    var s=state(subs), n=0;
+    subs.forEach(function(b){if(b.checked)n+=byCode[b.dataset.code]||0});
+    cp.checked=s.on===s.all; cp.indeterminate=s.on>0&&s.on<s.all;
+    var stat=cp.parentNode.querySelector('.cstat');
+    stat.textContent=(s.on?'선택 '+n+' / ':'')+'문항 '+stat.dataset.total+'개';
+    stat.className='cstat'+(s.on?' on':'');
+  });
+  document.querySelectorAll('.tp').forEach(function(tp){if(tp.checked||tp.indeterminate)nTopic++});
+  Object.keys(codes).forEach(function(c){nSub++;selTotal+=byCode[c]||0});
+  $('selInfo').innerHTML='선택한 범위: 대주제 <b>'+nTopic+'</b>개 · 소주제 <b>'+nSub+'</b>개 · 문항 <b>'+selTotal+'</b>개';
+  updatePool();
 }
 
 function selectedCodes(){
@@ -197,14 +248,62 @@ function basePool(){
 function updatePool(){
   var codes=selectedCodes();
   var n=basePool().filter(function(q){return codes[q.code]}).length;
-  $('poolInfo').textContent='현재 조건에서 출제 가능한 문항: '+n+'개';
+  $('poolInfo').textContent='현재 옵션(검수·제외 반영)으로 출제 가능한 문항: '+n+'개';
 }
 ['onlyOk','excludePrev'].forEach(function(id){$(id).addEventListener('change',updatePool)});
 
-$('allOn').onclick=function(){document.querySelectorAll('.sb,.tp').forEach(function(b){b.checked=true});syncTopics();updatePool()};
-$('allOff').onclick=function(){document.querySelectorAll('.sb,.tp').forEach(function(b){b.checked=false});syncTopics();updatePool()};
-var folded=false;
-$('foldAll').onclick=function(){folded=!folded;document.querySelectorAll('.subs').forEach(function(d){d.style.display=folded?'none':'flex'})};
+function setAll(v){document.querySelectorAll('.sb').forEach(function(b){b.checked=v});syncAll()}
+$('allOn').onclick=function(){setAll(true)};
+$('allOff').onclick=function(){setAll(false)};
+
+/* 시대 빠른 선택: 해당 장이 전부 켜져 있으면 끄고, 아니면 켠다 */
+var PRESETS={
+  'ancient':/^제[12]장/, 'goryeo':/^제3장/, 'joseon':/^제4장/, 'modern':/^제[567]장/
+};
+document.querySelectorAll('[data-preset]').forEach(function(btn){
+  btn.onclick=function(){
+    var re=PRESETS[btn.dataset.preset], subs=[];
+    CHAPS.forEach(function(c,ci){
+      if(re.test(c.name)) document.querySelectorAll('.sb[data-chap="'+ci+'"]').forEach(function(b){subs.push(b)});
+    });
+    var allOn=subs.every(function(b){return b.checked});
+    subs.forEach(function(b){b.checked=!allOn});
+    syncAll();
+  };
+});
+
+/* 모두 접기/펼치기 */
+var openAll=false;
+$('foldAll').onclick=function(){
+  openAll=!openAll;
+  document.querySelectorAll('#tree details').forEach(function(d){d.open=openAll});
+  $('foldAll').textContent=openAll?'모두 접기':'모두 펼치기';
+};
+
+/* 검색: 장·대주제·소주제 이름에 포함된 것만 보이고, 해당 장이 열린다 */
+var openBefore=null;
+$('search').addEventListener('input',function(){
+  var term=this.value.trim().toLowerCase(), hits=0;
+  var chapEls=document.querySelectorAll('#tree details');
+  if(term&&!openBefore){openBefore=[];chapEls.forEach(function(d){openBefore.push(d.open)})}
+  chapEls.forEach(function(d,i){
+    var any=false;
+    d.querySelectorAll('.topic').forEach(function(t){
+      var show=!term||t.dataset.text.indexOf(term)>=0;
+      var ownHit=!term||t.dataset.own.indexOf(term)>=0;
+      t.style.display=show?'':'none';
+      t.querySelectorAll('.chip').forEach(function(c){
+        c.style.display=(!term||ownHit||c.dataset.text.indexOf(term)>=0)?'':'none';
+      });
+      if(show){any=true;hits++}
+    });
+    d.style.display=any?'':'none';
+    if(term) d.open=any;
+    else if(openBefore) d.open=openBefore[i];
+  });
+  if(!term) openBefore=null;
+  $('searchInfo').textContent=term?(hits?hits+'개 대주제가 검색되었습니다.':'검색 결과가 없습니다.'):'';
+});
 
 /* ---------- 이전 출제 기록 ---------- */
 function prevIds(){
